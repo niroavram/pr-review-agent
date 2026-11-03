@@ -1,0 +1,32 @@
+{
+  "reviews": {
+    "security": [
+      {
+        "file": "src/store/orders.py",
+        "line": 20,
+        "severity": "high",
+        "category": "security",
+        "message": "SQL injection: customer is interpolated into the query",
+        "confidence": 0.9
+      }
+    ],
+    "bug": [],
+    "conventions": []
+  },
+  "fixes": {
+    "src/store/orders.py:20": {
+      "edits": [
+        {
+          "file": "src/store/orders.py",
+          "old": "    query = f\"SELECT id, total_cents FROM orders WHERE customer = '{customer}'\"\n    return conn.execute(query).fetchall()",
+          "new": "    query = \"SELECT id, total_cents FROM orders WHERE customer = ?\"\n    return conn.execute(query, (customer,)).fetchall()"
+        }
+      ],
+      "explanation": "Use a parameterized query (CONV-004)."
+    }
+  },
+  "critic": {
+    "verdict": "accept",
+    "notes": "minimal and correct"
+  }
+}

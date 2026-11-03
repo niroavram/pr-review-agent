@@ -1,0 +1,32 @@
+{
+  "reviews": {
+    "security": [
+      {
+        "file": "src/store/customers.py",
+        "line": 6,
+        "severity": "high",
+        "category": "security",
+        "message": "SQL injection: prefix is interpolated into the LIKE pattern.",
+        "confidence": 0.9
+      }
+    ],
+    "bug": [],
+    "conventions": []
+  },
+  "fixes": {
+    "src/store/customers.py:6": {
+      "edits": [
+        {
+          "file": "src/store/customers.py",
+          "old": "    query = f\"SELECT DISTINCT customer FROM orders WHERE customer LIKE '{prefix}%'\"\n    return [row[0] for row in conn.execute(query).fetchall()]",
+          "new": "    query = \"SELECT DISTINCT customer FROM orders WHERE customer LIKE ?\"\n    return [row[0] for row in conn.execute(query, (f\"{prefix}%\",)).fetchall()]"
+        }
+      ],
+      "explanation": "Bind the LIKE pattern as a parameter (CONV-004)."
+    }
+  },
+  "critic": {
+    "verdict": "accept",
+    "notes": "minimal and correct"
+  }
+}

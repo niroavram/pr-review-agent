@@ -1,0 +1,5 @@
+{
+  "branch": "case/07-clean",
+  "title": "Add clamp_page helper",
+  "description": "Adds `clamp_page` so an out-of-range `?page=` shows the nearest valid page."
+}

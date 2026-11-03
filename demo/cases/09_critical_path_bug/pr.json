@@ -1,0 +1,5 @@
+{
+  "branch": "case/09-critical-path-bug",
+  "title": "Split payments by weight",
+  "description": "Adds `split_by_weights` so a group order can be charged in proportion to each item."
+}

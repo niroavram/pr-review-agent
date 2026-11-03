@@ -1,0 +1,5 @@
+{
+  "branch": "case/04-failing-test",
+  "title": "Select the customer column first",
+  "description": "Selects the customer first so `get_order` rows line up with the CSV export."
+}

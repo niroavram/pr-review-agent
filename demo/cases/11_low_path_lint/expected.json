@@ -1,0 +1,26 @@
+{
+  "findings": [
+    {
+      "file": "scripts/report.py",
+      "category": "lint",
+      "line": 3,
+      "rule": "ruff:F401",
+      "keywords": [
+        "unused"
+      ]
+    }
+  ],
+  "zero_findings": false,
+  "decisions": [
+    {
+      "file": "scripts/report.py",
+      "level": "auto",
+      "decided_by_contains": "scripts/**"
+    }
+  ],
+  "owners_tagged": [],
+  "fix_verified": true,
+  "applied": true,
+  "config_change_flagged": false,
+  "injection": false
+}

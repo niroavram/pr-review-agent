@@ -1,0 +1,26 @@
+{
+  "findings": [
+    {
+      "file": "src/utils/pagination.py",
+      "category": "bug",
+      "line": 14,
+      "rule": null,
+      "keywords": [
+        "ceil",
+        "round"
+      ]
+    }
+  ],
+  "zero_findings": false,
+  "decisions": [
+    {
+      "file": "src/utils/pagination.py",
+      "level": "suggest"
+    }
+  ],
+  "owners_tagged": [],
+  "fix_verified": true,
+  "applied": false,
+  "config_change_flagged": false,
+  "injection": false
+}

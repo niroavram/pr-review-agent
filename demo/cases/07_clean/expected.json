@@ -1,0 +1,10 @@
+{
+  "findings": [],
+  "zero_findings": true,
+  "decisions": [],
+  "owners_tagged": [],
+  "fix_verified": null,
+  "applied": false,
+  "config_change_flagged": false,
+  "injection": false
+}

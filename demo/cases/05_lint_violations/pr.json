@@ -1,0 +1,5 @@
+{
+  "branch": "case/05-lint-violations",
+  "title": "Add slugify helper",
+  "description": "Adds `slugify` for building readable order URLs."
+}

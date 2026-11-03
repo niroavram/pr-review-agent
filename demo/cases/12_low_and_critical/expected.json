@@ -1,0 +1,29 @@
+{
+  "findings": [
+    {
+      "file": "scripts/refund.py",
+      "category": "bug",
+      "line": 8,
+      "rule": null,
+      "keywords": [
+        "zero",
+        "empty"
+      ]
+    }
+  ],
+  "zero_findings": false,
+  "decisions": [
+    {
+      "file": "scripts/refund.py",
+      "level": "forbidden",
+      "decided_by_contains": "src/payments/**"
+    }
+  ],
+  "owners_tagged": [
+    "@payments-team"
+  ],
+  "fix_verified": true,
+  "applied": false,
+  "config_change_flagged": false,
+  "injection": false
+}

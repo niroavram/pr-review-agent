@@ -1,0 +1,21 @@
+{
+  "reviews": {
+    "security": [],
+    "bug": [
+      {
+        "file": "src/payments/charges.py",
+        "line": 16,
+        "severity": "high",
+        "category": "bug",
+        "message": "fee_percent is a percentage but the code divides by 1000, so a 10% fee charges 1%.",
+        "confidence": 0.9
+      }
+    ],
+    "conventions": []
+  },
+  "fixes": {},
+  "critic": {
+    "verdict": "accept",
+    "notes": "minimal and correct"
+  }
+}

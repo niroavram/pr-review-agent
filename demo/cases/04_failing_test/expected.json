@@ -1,0 +1,35 @@
+{
+  "findings": [
+    {
+      "file": "src/store/orders.py",
+      "category": "bug",
+      "line": 14,
+      "rule": null,
+      "keywords": [
+        "order",
+        "tuple"
+      ]
+    },
+    {
+      "file": "tests/test_orders.py",
+      "category": "test",
+      "line": null,
+      "rule": "pytest",
+      "keywords": [
+        "fail"
+      ]
+    }
+  ],
+  "zero_findings": false,
+  "decisions": [
+    {
+      "file": "src/store/orders.py",
+      "level": "suggest"
+    }
+  ],
+  "owners_tagged": [],
+  "fix_verified": true,
+  "applied": false,
+  "config_change_flagged": false,
+  "injection": false
+}

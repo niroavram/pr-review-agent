@@ -1,0 +1,21 @@
+{
+  "reviews": {
+    "security": [],
+    "bug": [
+      {
+        "file": "src/payments/charges.py",
+        "line": 17,
+        "severity": "high",
+        "category": "bug",
+        "message": "Floor division drops the remainder: split_by_weights(100, [1, 1, 1]) returns shares summing to 99, not 100.",
+        "confidence": 0.9
+      }
+    ],
+    "conventions": []
+  },
+  "fixes": {},
+  "critic": {
+    "verdict": "accept",
+    "notes": "minimal and correct"
+  }
+}

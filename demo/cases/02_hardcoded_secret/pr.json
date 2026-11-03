@@ -1,0 +1,5 @@
+{
+  "branch": "case/02-hardcoded-secret",
+  "title": "Add order notification settings",
+  "description": "Adds the mail relay settings and a query for orders that still need a notification email."
+}

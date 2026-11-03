@@ -1,0 +1,32 @@
+{
+  "reviews": {
+    "security": [],
+    "bug": [
+      {
+        "file": "src/utils/pagination.py",
+        "line": 14,
+        "severity": "medium",
+        "category": "bug",
+        "message": "total_pages floors: 5 items at 2 per page gives 2 pages, should be 3 (use ceiling division).",
+        "confidence": 0.9
+      }
+    ],
+    "conventions": []
+  },
+  "fixes": {
+    "src/utils/pagination.py:14": {
+      "edits": [
+        {
+          "file": "src/utils/pagination.py",
+          "old": "    return total_items // per_page",
+          "new": "    return -(-total_items // per_page)"
+        }
+      ],
+      "explanation": "Use ceiling division so a partial last page is counted."
+    }
+  },
+  "critic": {
+    "verdict": "accept",
+    "notes": "minimal and correct"
+  }
+}
