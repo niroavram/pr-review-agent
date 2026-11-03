@@ -1,0 +1,5 @@
+{
+  "branch": "case/06-convention-violation",
+  "title": "Add revenue reporting",
+  "description": "Adds a small revenue total for the back-office dashboard."
+}

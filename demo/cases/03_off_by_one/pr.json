@@ -1,0 +1,5 @@
+{
+  "branch": "case/03-off-by-one",
+  "title": "Add total_pages helper",
+  "description": "Adds `total_pages` so the order list can render its page links."
+}

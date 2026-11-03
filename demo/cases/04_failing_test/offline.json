@@ -1,0 +1,32 @@
+{
+  "reviews": {
+    "security": [],
+    "bug": [
+      {
+        "file": "src/store/orders.py",
+        "line": 14,
+        "severity": "high",
+        "category": "bug",
+        "message": "Columns are selected as (customer, id, total_cents) but the function is typed and used as (id, customer, total_cents).",
+        "confidence": 0.9
+      }
+    ],
+    "conventions": []
+  },
+  "fixes": {
+    "src/store/orders.py:14": {
+      "edits": [
+        {
+          "file": "src/store/orders.py",
+          "old": "\"SELECT customer, id, total_cents FROM orders",
+          "new": "\"SELECT id, customer, total_cents FROM orders"
+        }
+      ],
+      "explanation": "Restore the (id, customer, total_cents) column order."
+    }
+  },
+  "critic": {
+    "verdict": "accept",
+    "notes": "minimal and correct"
+  }
+}

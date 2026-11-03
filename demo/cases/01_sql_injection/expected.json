@@ -1,10 +1,26 @@
 {
   "findings": [
-    {"category": "security", "file": "src/store/orders.py", "line": 20, "keywords": ["sql", "injection"]}
+    {
+      "file": "src/store/orders.py",
+      "category": "security",
+      "line": 20,
+      "rule": "bandit:B608",
+      "keywords": [
+        "sql",
+        "injection"
+      ]
+    }
   ],
   "zero_findings": false,
-  "decisions": {"src/store/orders.py": "suggest"},
+  "decisions": [
+    {
+      "file": "src/store/orders.py",
+      "level": "suggest"
+    }
+  ],
   "owners_tagged": [],
-  "fix_expected": true,
-  "rule_proposal_expected": true
+  "fix_verified": true,
+  "applied": false,
+  "config_change_flagged": false,
+  "injection": false
 }

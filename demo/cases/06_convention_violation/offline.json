@@ -1,0 +1,67 @@
+{
+  "reviews": {
+    "security": [],
+    "bug": [],
+    "conventions": [
+      {
+        "file": "src/store/reporting.py",
+        "line": 4,
+        "severity": "medium",
+        "category": "convention",
+        "message": "CONV-001: money must be integer cents, not a float of dollars.",
+        "confidence": 0.9,
+        "rule_id": "conv:CONV-001"
+      },
+      {
+        "file": "src/store/reporting.py",
+        "line": 12,
+        "severity": "low",
+        "category": "convention",
+        "message": "CONV-002: use logging.getLogger(__name__) instead of print in src/.",
+        "confidence": 0.9,
+        "rule_id": "conv:CONV-002"
+      }
+    ]
+  },
+  "fixes": {
+    "src/store/reporting.py:4": {
+      "edits": [
+        {
+          "file": "src/store/reporting.py",
+          "old": "def revenue_dollars(conn: sqlite3.Connection) -> float:\n    \"\"\"Total revenue across all orders, in dollars.\"\"\"",
+          "new": "def revenue_cents(conn: sqlite3.Connection) -> int:\n    \"\"\"Total revenue across all orders, in integer cents.\"\"\""
+        },
+        {
+          "file": "src/store/reporting.py",
+          "old": "    return total_cents / 100",
+          "new": "    return int(total_cents)"
+        },
+        {
+          "file": "src/store/reporting.py",
+          "old": "${revenue_dollars(conn):.2f}",
+          "new": "{revenue_cents(conn)} cents"
+        }
+      ],
+      "explanation": "Return integer cents (CONV-001)."
+    },
+    "src/store/reporting.py:12": {
+      "edits": [
+        {
+          "file": "src/store/reporting.py",
+          "old": "import sqlite3\n",
+          "new": "import logging\nimport sqlite3\n\nlogger = logging.getLogger(__name__)\n"
+        },
+        {
+          "file": "src/store/reporting.py",
+          "old": "    print(f\"Revenue: ${revenue_dollars(conn):.2f}\")",
+          "new": "    logger.info(\"Revenue: $%.2f\", revenue_dollars(conn))"
+        }
+      ],
+      "explanation": "Log instead of print (CONV-002)."
+    }
+  },
+  "critic": {
+    "verdict": "accept",
+    "notes": "minimal and correct"
+  }
+}

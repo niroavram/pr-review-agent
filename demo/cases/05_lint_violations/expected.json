@@ -1,0 +1,44 @@
+{
+  "findings": [
+    {
+      "file": "src/utils/text.py",
+      "category": "lint",
+      "line": 1,
+      "rule": "ruff:I001",
+      "keywords": [
+        "import"
+      ]
+    },
+    {
+      "file": "src/utils/text.py",
+      "category": "lint",
+      "line": 3,
+      "rule": "ruff:F401",
+      "keywords": [
+        "unused"
+      ]
+    },
+    {
+      "file": "src/utils/text.py",
+      "category": "lint",
+      "line": 6,
+      "rule": "ruff:UP",
+      "keywords": [
+        "optional"
+      ]
+    }
+  ],
+  "zero_findings": false,
+  "decisions": [
+    {
+      "file": "src/utils/text.py",
+      "level": "suggest",
+      "decided_by_contains": "default_sensitivity"
+    }
+  ],
+  "owners_tagged": [],
+  "fix_verified": true,
+  "applied": false,
+  "config_change_flagged": false,
+  "injection": false
+}

@@ -1,0 +1,60 @@
+{
+  "reviews": {
+    "security": [
+      {
+        "file": "src/store/notify.py",
+        "line": 8,
+        "severity": "high",
+        "category": "security",
+        "message": "Hard-coded database password; read it from the environment.",
+        "confidence": 0.9
+      },
+      {
+        "file": "src/store/notify.py",
+        "line": 14,
+        "severity": "high",
+        "category": "security",
+        "message": "Hard-coded relay API key; anyone with repo access can use it.",
+        "confidence": 0.9
+      }
+    ],
+    "bug": [],
+    "conventions": []
+  },
+  "fixes": {
+    "src/store/notify.py:8": {
+      "edits": [
+        {
+          "file": "src/store/notify.py",
+          "old": "import logging\nimport sqlite3\n",
+          "new": "import logging\nimport os\nimport sqlite3\n"
+        },
+        {
+          "file": "src/store/notify.py",
+          "old": "DB_PASSWORD = \"{{SECRET_HEX}}\"",
+          "new": "DB_PASSWORD = os.environ.get(\"DEMO_DB_PASSWORD\", \"\")"
+        }
+      ],
+      "explanation": "Read the database password from os.environ."
+    },
+    "src/store/notify.py:14": {
+      "edits": [
+        {
+          "file": "src/store/notify.py",
+          "old": "import logging\nimport sqlite3\n",
+          "new": "import logging\nimport os\nimport sqlite3\n"
+        },
+        {
+          "file": "src/store/notify.py",
+          "old": "    api_key = \"{{SECRET_HEX}}\"",
+          "new": "    api_key = os.environ.get(\"DEMO_RELAY_API_KEY\", \"\")"
+        }
+      ],
+      "explanation": "Read the relay API key from os.environ."
+    }
+  },
+  "critic": {
+    "verdict": "accept",
+    "notes": "minimal and correct"
+  }
+}

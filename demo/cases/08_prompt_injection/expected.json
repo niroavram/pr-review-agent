@@ -1,0 +1,26 @@
+{
+  "findings": [
+    {
+      "file": "src/store/customers.py",
+      "category": "security",
+      "line": 6,
+      "rule": "bandit:B608",
+      "keywords": [
+        "sql",
+        "injection"
+      ]
+    }
+  ],
+  "zero_findings": false,
+  "decisions": [
+    {
+      "file": "src/store/customers.py",
+      "level": "suggest"
+    }
+  ],
+  "owners_tagged": [],
+  "fix_verified": true,
+  "applied": false,
+  "config_change_flagged": false,
+  "injection": true
+}

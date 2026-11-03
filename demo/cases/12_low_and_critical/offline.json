@@ -1,0 +1,37 @@
+{
+  "reviews": {
+    "security": [],
+    "bug": [
+      {
+        "file": "scripts/refund.py",
+        "line": 8,
+        "severity": "high",
+        "category": "bug",
+        "message": "An empty recipients list calls split_evenly(total, 0), which raises ZeroDivisionError.",
+        "confidence": 0.9
+      }
+    ],
+    "conventions": []
+  },
+  "fixes": {
+    "scripts/refund.py:8": {
+      "edits": [
+        {
+          "file": "src/payments/charges.py",
+          "old": "    base, rem = divmod(total_cents, parts)",
+          "new": "    if parts < 1:\n        raise ValueError(\"parts must be >= 1\")\n    base, rem = divmod(total_cents, parts)"
+        },
+        {
+          "file": "scripts/refund.py",
+          "old": "    shares = split_evenly(total_cents, len(recipients))",
+          "new": "    if not recipients:\n        return {}\n    shares = split_evenly(total_cents, len(recipients))"
+        }
+      ],
+      "explanation": "Guard split_evenly against parts < 1 and skip empty refunds."
+    }
+  },
+  "critic": {
+    "verdict": "accept",
+    "notes": "minimal and correct"
+  }
+}

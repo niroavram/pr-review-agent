@@ -1,0 +1,37 @@
+{
+  "findings": [
+    {
+      "file": "src/store/reporting.py",
+      "category": "convention",
+      "line": 4,
+      "rule": "CONV-001",
+      "keywords": [
+        "float",
+        "cents"
+      ]
+    },
+    {
+      "file": "src/store/reporting.py",
+      "category": "convention",
+      "line": 12,
+      "rule": "CONV-002",
+      "keywords": [
+        "print",
+        "logging"
+      ]
+    }
+  ],
+  "zero_findings": false,
+  "decisions": [
+    {
+      "file": "src/store/reporting.py",
+      "level": "suggest",
+      "decided_by_contains": "default_sensitivity"
+    }
+  ],
+  "owners_tagged": [],
+  "fix_verified": true,
+  "applied": false,
+  "config_change_flagged": false,
+  "injection": false
+}

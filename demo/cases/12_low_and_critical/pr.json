@@ -1,0 +1,5 @@
+{
+  "branch": "case/12-low-and-critical",
+  "title": "Add group refund script",
+  "description": "Adds `scripts/refund.py` to split a refund between everyone on a group order."
+}
