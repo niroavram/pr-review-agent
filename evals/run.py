@@ -151,7 +151,7 @@ def _online_rows(repo: Path, dirs: list[Path], settings: Settings) -> list[dict[
         target,
         data=ensure_dataset(client, dirs),
         evaluators=[as_langsmith(fn) for fn in EVALUATORS],
-        summary_evaluators=[langsmith_summary],
+        summary_evaluators=[langsmith_summary],  # type: ignore[list-item]  # returns a plain dict
         experiment_prefix="pr-agent",
         max_concurrency=1,
         client=client,
