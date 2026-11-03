@@ -34,11 +34,11 @@ Outputs go to `.pr-agent/runs/<run-id>/`: `review.md`, `review.json` and `patche
 
 ## Status
 
-Last updated: v1-submission.
+Last updated: after v1-submission (e2e hang fixed).
 
 ### Implemented and tested
 
-Everything below ran in this environment: `ruff check`, `mypy` and `pytest` give **347 passed, 2 skipped**. The tests run with no API keys and no network, using a fake/scripted LLM and the real tools.
+Everything below ran in this environment: `ruff check`, `mypy` and `pytest` give **349 passed**. The tests run with no API keys and no network, using a fake/scripted LLM and the real tools.
 
 - **Ingest:** local branches (`--local`) and GitHub PR URLs, using REST metadata, a partial clone and `refs/pull/N/head`. URL mode is tested against a mocked API and a local bare repo, not against github.com.
 - **Diff parsing and triage:** file filters, docs/config-only PRs.
@@ -75,7 +75,7 @@ Everything below ran in this environment: `ruff check`, `mypy` and `pytest` give
 
 ### Known issues
 
-- `tests/test_graph_e2e.py` (the full graph with a fake LLM, including the approval/resume path) is **skipped: it hangs, under investigation**. The hang appeared after the convergence-loop changes. Similar full-graph runs in `tests/test_cases.py` pass.
+- ~~`tests/test_graph_e2e.py` hangs~~ **Fixed.** The escalation step resumed the graph with an empty dict, which LangGraph reads as an interrupt-id map, so the same interrupt fired forever. It now resumes with a list of pairs. The e2e tests are re-enabled and pass with the convergence loop both off and on.
 - Offline eval ([evals/results.md](evals/results.md), scripted LLM): precision 100%, recall 94%, fix pass rate 100% (12/12), policy_correct 91%. There are two gaps:
   - Case 05, recall 0.67: the UP045 fix leaves an unused import, which the next round of the convergence loop would fix.
   - Case 06, policy_correct 0: the CONV-001 fix changes a public signature, so the policy correctly downgrades it to `comment`, but the case's expectation still says `suggest`. The expectation needs revisiting.
