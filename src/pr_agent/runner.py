@@ -1,0 +1,84 @@
+"""Run, pause at the approval gate, and resume reviews. The CLI and evals both use this."""
+
+from __future__ import annotations
+
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+from langgraph.types import Command
+
+from pr_agent.deps import Deps
+from pr_agent.graph import build_graph, sqlite_checkpointer
+from pr_agent.models import PRContext
+from pr_agent.tracing import make_tracer, run_config
+
+# Called with the pending `suggest` fixes; returns the finding ids to approve.
+Approver = Callable[[list[dict[str, Any]]], list[str]]
+
+
+@dataclass
+class RunResult:
+    run_id: str
+    state: dict[str, Any]
+    trace_url: str | None
+
+
+def _approve_none(pending: list[dict[str, Any]]) -> list[str]:
+    return []
+
+
+def _drive(graph: Any, first_input: Any, cfg: dict, approver: Approver) -> dict[str, Any]:
+    """Invoke; whenever the graph pauses at policy_gate, ask the approver and resume."""
+    result = graph.invoke(first_input, cfg)
+    while result.get("__interrupt__"):
+        pending = result["__interrupt__"][0].value.get("suggest", [])
+        result = graph.invoke(Command(resume=approver(pending)), cfg)
+    return result
+
+
+def _trace_url(tracer: Any) -> str | None:
+    try:
+        return tracer.get_run_url() if tracer else None
+    except Exception:  # noqa: BLE001 - a missing URL must never fail a review
+        return None
+
+
+def run_review(
+    ctx: PRContext, deps: Deps, approver: Approver = _approve_none, banners: list[str] | None = None
+) -> RunResult:
+    run_id = f"{ctx.pr_id}-{ctx.head_sha[:8]}-{time.strftime('%Y%m%d%H%M%S')}"
+    output_dir = deps.settings.work_dir / "runs" / run_id
+    tracer = make_tracer()
+    cfg = run_config(ctx, run_id, deps, tracer)
+    checkpointer = sqlite_checkpointer(deps.settings.work_dir / "checkpoints.sqlite")
+    graph = build_graph(checkpointer)
+    initial = {"ctx": ctx, "output_dir": str(output_dir), "banners": banners or []}
+    state = _drive(graph, initial, cfg, approver)
+    return RunResult(run_id, state, _trace_url(tracer))
+
+
+def resume_review(run_id: str, deps: Deps, approve: list[str]) -> RunResult:
+    """`/autofix apply` equivalent: re-run the gate of a finished run with new approvals.
+
+    Time-travels to the checkpoint just before policy_gate, so verification results are
+    reused and nothing upstream (LLM calls, analyzers) runs again.
+    """
+    checkpointer = sqlite_checkpointer(deps.settings.work_dir / "checkpoints.sqlite")
+    graph = build_graph(checkpointer)
+    thread = {"configurable": {"thread_id": run_id, "deps": deps}}
+    before_gate = next(
+        (s for s in graph.get_state_history(thread) if s.next == ("policy_gate",)), None
+    )
+    if before_gate is None:
+        raise ValueError(f"run {run_id} not found or never reached the approval gate")
+    ctx = before_gate.values["ctx"]
+    tracer = make_tracer()
+    cfg = run_config(ctx, run_id, deps, tracer)
+    cfg["configurable"]["checkpoint_id"] = before_gate.config["configurable"]["checkpoint_id"]
+    result = graph.invoke(None, cfg)
+    cfg["configurable"].pop("checkpoint_id")
+    if result.get("__interrupt__"):
+        result = graph.invoke(Command(resume=approve), cfg)
+    return RunResult(run_id, result, _trace_url(tracer))

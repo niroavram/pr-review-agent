@@ -49,3 +49,58 @@ def redact(obj: Any) -> Any:
     if isinstance(obj, list | tuple):
         return [redact(v) for v in obj]
     return obj
+
+
+def _redact_payload(payload: dict) -> dict:
+    """LangSmith hide_inputs/hide_outputs hook. Pydantic objects are dumped first."""
+    return redact(_jsonable(payload))
+
+
+def _jsonable(obj: Any) -> Any:
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json")
+    if isinstance(obj, dict):
+        return {k: _jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, list | tuple):
+        return [_jsonable(v) for v in obj]
+    return obj
+
+
+def tracing_enabled() -> bool:
+    import os
+
+    has_key = bool(os.environ.get("LANGSMITH_API_KEY") or os.environ.get("LANGCHAIN_API_KEY"))
+    return has_key and os.environ.get("LANGSMITH_TRACING", "true").lower() != "false"
+
+
+def make_tracer(project: str | None = None) -> Any | None:
+    """A LangChainTracer whose client redacts every input/output, or None without a key."""
+    if not tracing_enabled():
+        return None
+    import os
+
+    from langchain_core.tracers.langchain import LangChainTracer
+    from langsmith import Client
+
+    client = Client(hide_inputs=_redact_payload, hide_outputs=_redact_payload)
+    return LangChainTracer(
+        client=client, project_name=project or os.environ.get("LANGSMITH_PROJECT", "pr-agent")
+    )
+
+
+def run_config(ctx: Any, thread_id: str, deps: Any, tracer: Any | None) -> dict:
+    """LangGraph config: thread for the checkpointer, deps, and LangSmith tags/metadata."""
+    return {
+        "configurable": {"thread_id": thread_id, "deps": deps},
+        "run_name": f"review {ctx.repo_name}#{ctx.pr_id}",
+        "tags": [f"repo:{ctx.repo_name}", f"pr:{ctx.pr_id}", f"sha:{ctx.head_sha[:12]}"],
+        "metadata": {
+            "repo": ctx.repo_name,
+            "pr": ctx.pr_id,
+            "head_sha": ctx.head_sha,
+            "base_sha": ctx.base_sha,
+            "sandbox": getattr(deps.sandbox, "mode", "?"),
+        },
+        "callbacks": [tracer] if tracer else [],
+        "recursion_limit": 100,
+    }

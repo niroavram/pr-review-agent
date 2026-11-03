@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 
 @dataclass
@@ -44,6 +44,13 @@ class LocalSandbox:
             return ExecResult(-1, _s(e.stdout), _s(e.stderr), timed_out=True)
         except FileNotFoundError as e:
             return ExecResult(127, "", str(e))
+
+
+def get_sandbox(settings: Any) -> tuple[Sandbox, list[str]]:
+    """Wave 1: local only. Docker selection lands with the DockerSandbox (stream 2B)."""
+    return LocalSandbox(), [
+        "⚠️ Sandbox: local temp dir (not isolated). Tests run only for --local reviews."
+    ]
 
 
 def tool_available(name: str) -> bool:
