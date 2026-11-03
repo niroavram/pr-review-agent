@@ -53,3 +53,7 @@ class FakeSandbox:
             if key in joined:
                 return result
         return ExecResult(0, "", "")
+
+    def python(self) -> list[str]:
+        """Like a container: a bare interpreter name on PATH."""
+        return ["python"]

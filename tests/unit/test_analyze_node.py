@@ -35,11 +35,14 @@ def _ctx(repo: Path, added: list[int]) -> PRContext:
     )
 
 
-def test_finds_b608_on_added_line(demo_repo: Path, tmp_path: Path) -> None:
+def test_finds_sql_injection_on_added_line(demo_repo: Path, tmp_path: Path) -> None:
     out = static_analysis({"ctx": _ctx(demo_repo, [17, 18, 19, 20, 21, 22])}, _config(tmp_path))
-    assert out["tool_status"] == {"bandit": "ok"}
-    assert [(f.rule_id, f.file, f.line) for f in out["findings"]] == [
-        ("bandit:B608", "src/store/orders.py", 20)
+    status = out["tool_status"]
+    assert status["bandit"] == status["ruff"] == status["semgrep"] == "ok"
+    assert status["gitleaks"] in ("ok", "skipped: not installed")
+    assert sorted((f.rule_id, f.file, f.line) for f in out["findings"]) == [
+        ("bandit:B608", "src/store/orders.py", 20),
+        ("semgrep:sql-built-from-string", "src/store/orders.py", 20),
     ]
 
 
@@ -51,10 +54,10 @@ def test_finding_outside_added_lines_is_dropped(demo_repo: Path, tmp_path: Path)
 def test_broken_analyzer_reported_not_raised(
     demo_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def broken(*_: object) -> list:
+    def broken(_: object) -> list:
         raise RuntimeError("crashed")
 
     monkeypatch.setitem(analyzers.ANALYZERS, "broken", broken)
     out = static_analysis({"ctx": _ctx(demo_repo, [20])}, _config(tmp_path))
     assert out["tool_status"]["broken"] == "error: crashed"
-    assert out["tool_status"]["bandit"] == "ok" and len(out["findings"]) == 1
+    assert out["tool_status"]["bandit"] == "ok" and len(out["findings"]) == 2

@@ -1,4 +1,4 @@
-"""Static analysis node: run every registered analyzer on the PR's changed Python files."""
+"""Static analysis node: run every registered analyzer on the PR's changed files."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import shutil
 
 from langchain_core.runnables import RunnableConfig
 
-from pr_agent.analyzers import ANALYZERS
+from pr_agent.analyzers import AnalysisContext, run_all
 from pr_agent.deps import get_deps
 from pr_agent.gitutil import materialize
 from pr_agent.models import ChangedFile, Finding
@@ -20,6 +20,11 @@ def changed_python_files(files: list[ChangedFile]) -> list[str]:
     return [f.path for f in files if f.path.endswith(".py") and f.status != "deleted"]
 
 
+def head_files(files: list[ChangedFile]) -> list[str]:
+    """Paths of all changed files that still exist in the head commit (analyzers filter)."""
+    return [f.path for f in files if f.status != "deleted"]
+
+
 def on_added_lines(findings: list[Finding], files: list[ChangedFile]) -> list[Finding]:
     """Keep only findings on lines this PR added (±LINE_SLACK): we review the diff, not history."""
     added = {f.path: set(f.added_lines) for f in files}
@@ -31,20 +36,17 @@ def on_added_lines(findings: list[Finding], files: list[ChangedFile]) -> list[Fi
 
 
 def static_analysis(state: ReviewState, config: RunnableConfig) -> dict:
-    """Materialize the head sha, run analyzers, return diff-scoped findings and tool status."""
+    """Materialize head (code under review) and base (trusted configs), run all analyzers,
+    return diff-scoped findings and per-tool status."""
     deps = get_deps(config)
     ctx = state["ctx"]
-    files = changed_python_files(ctx.files)
     workdir = materialize(ctx.repo_path, ctx.head_sha)
-    findings: list[Finding] = []
-    status: dict[str, str] = {}
+    base_dir = materialize(ctx.repo_path, ctx.base_sha)
     try:
-        for name, analyzer in ANALYZERS.items():
-            try:
-                findings += analyzer(deps.sandbox, workdir, files)
-                status[name] = "ok"
-            except Exception as e:  # one broken tool must not sink the review
-                status[name] = f"error: {e}"
+        files = [f for f in head_files(ctx.files) if (workdir / f).is_file()]
+        actx = AnalysisContext(workdir, base_dir, files, deps.sandbox)
+        findings, status = run_all(actx)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+        shutil.rmtree(base_dir, ignore_errors=True)
     return {"findings": on_added_lines(findings, ctx.files), "tool_status": status}
