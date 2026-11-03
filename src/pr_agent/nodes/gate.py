@@ -7,9 +7,10 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import interrupt
 
-from pr_agent.models import Finding, FixProposal, Level, PolicyDecision, Verification
+from pr_agent.models import Finding, FixProposal, Level, PolicyDecision, PRContext, Verification
 from pr_agent.policy.config import AutonomyConfig
 from pr_agent.policy.engine import decide
+from pr_agent.policy.facts import PatchFacts, finding_facts, patch_facts
 from pr_agent.state import ReviewState
 
 
@@ -28,7 +29,12 @@ def policy_gate(state: ReviewState, config: RunnableConfig) -> dict:
     cfg = AutonomyConfig.model_validate(cfg_data) if cfg_data else None
     findings = state.get("final_findings", [])
     proposals, checked = latest_by_finding(state.get("fixes", []), state.get("verifications", []))
-    decisions = [decide(f, proposals.get(f.id), checked.get(f.id), cfg) for f in findings]
+    ctx = state.get("ctx")
+    decisions = [
+        decide(f, p, checked.get(f.id), cfg, _facts(ctx, f, p))
+        for f in findings
+        for p in [proposals.get(f.id)]
+    ]
     candidates = [
         f
         for f, d in zip(findings, decisions, strict=True)
@@ -41,6 +47,13 @@ def policy_gate(state: ReviewState, config: RunnableConfig) -> dict:
     approved = [i for i in (approved or []) if i in candidate_ids]
     _trace(decisions, proposals)
     return {"decisions": decisions, "approved": approved}
+
+
+def _facts(ctx: PRContext | None, f: Finding, p: FixProposal | None) -> PatchFacts | None:
+    """Routes/API facts need the repo; without a ctx (unit tests) decide() uses the diff alone."""
+    if ctx is None:
+        return None
+    return patch_facts(ctx, p.patch) if p else finding_facts(ctx, f)
 
 
 def _summary(f: Finding) -> dict[str, str]:
