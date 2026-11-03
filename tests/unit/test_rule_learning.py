@@ -167,7 +167,7 @@ def test_finding_caught_by_enabled_rule_is_skipped(
 ) -> None:
     ctx, patch = case01
     caught = [
-        _sqli(source="bandit").model_copy(update={"rule_id": "bandit:B608"}),
+        _sqli(source="semgrep").model_copy(update={"rule_id": "custom:ERR-001"}),
         Finding(
             id="F2",
             source="ruff",
@@ -296,7 +296,8 @@ def test_ruff_selection_from_base_config() -> None:
     selection = ruff_selection(DEMO_BASE)
     assert is_enabled("ruff:F401", selection) and is_enabled("ruff:B006", selection)
     assert not is_enabled("ruff:S608", selection) and not is_enabled("ruff:BLE001", selection)
-    assert is_enabled("bandit:B608", selection) and not is_enabled("bandit:B101", selection)
-    assert is_enabled("custom:ERR-001", selection) and is_enabled("semgrep:x", selection)
+    # Bandit and vendored semgrep run inside the agent, not in the repo's CI: not "enabled".
+    assert not is_enabled("bandit:B608", selection) and not is_enabled("semgrep:x", selection)
+    assert is_enabled("custom:ERR-001", selection)
     assert not is_enabled("llm:sqli", selection) and not is_enabled(None, selection)
     assert selector_matches("PLR2004", "PL") and not selector_matches("DTZ005", "D")

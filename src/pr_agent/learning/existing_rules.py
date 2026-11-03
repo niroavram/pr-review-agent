@@ -72,10 +72,12 @@ def ruff_selection(base_dir: Path | None) -> tuple[list[str], list[str]]:
 
 
 def is_enabled(rule_id: str | None, selection: tuple[list[str], list[str]]) -> bool:
-    """True when the base config already runs this rule, so the finding is already prevented.
+    """True when the repo's OWN base config enforces this rule, so its CI already prevents it.
 
-    Bandit (minus B101), vendored semgrep and the base `.semgrep/` rules always run.
-    LLM findings, conventions and test failures are never "enabled".
+    Only ruff rules selected in the base config and the base `.semgrep/` rules (`custom:`)
+    count. Bandit and our vendored semgrep rules run inside this agent, not in the repo's CI,
+    so a finding they catch is still worth turning into a repo rule. LLM findings,
+    conventions and test failures are never "enabled".
     """
     tool, _, code = (rule_id or "").partition(":")
     if tool == "ruff":
@@ -83,20 +85,18 @@ def is_enabled(rule_id: str | None, selection: tuple[list[str], list[str]]) -> b
         return any(selector_matches(code, s) for s in select) and not any(
             selector_matches(code, s) for s in ignore
         )
-    if tool == "bandit":
-        return code not in BANDIT_SKIPPED
-    return tool in ("semgrep", "custom")
+    return tool == "custom"
 
 
 def is_style(code: str) -> bool:
     return any(selector_matches(code, family) for family in STYLE_FAMILIES)
 
 
-def priority(hit: RuleHit) -> int:
-    """Security first, then bugbear-like correctness rules, then the rest."""
-    if _SECURITY.match(hit.code):
-        return 0
-    return 1 if _BUGBEAR_LIKE.match(hit.code) else 2
+def priority(hit: RuleHit) -> tuple[int, int]:
+    """Ruff before bandit (the repo enforces rules through its ruff config, so a ruff rule is
+    the actionable proposal); within a tool: security, then bugbear-like, then the rest."""
+    kind = 0 if _SECURITY.match(hit.code) else 1 if _BUGBEAR_LIKE.match(hit.code) else 2
+    return (0 if hit.tool == "ruff" else 1, kind)
 
 
 def _ruff_cmd(sandbox: Sandbox, select: str, target: str) -> list[str]:
