@@ -1,4 +1,11 @@
-"""Turn raw fan-out findings into the short, ranked list a human will read."""
+"""Turn raw fan-out findings into the short, ranked list a human will read.
+
+Rules, in order:
+1. LLM findings below `min_confidence` are dropped; tool findings are evidence and are kept.
+2. Convention findings must cite a CONV-ID defined in the base CONVENTIONS.md.
+3. Duplicates (same file, within 2 lines, same kind) collapse, preferring tool findings.
+4. Sort by severity, then file and line; keep at most `max_comments`; ids F1, F2, ...
+"""
 
 from __future__ import annotations
 
@@ -15,10 +22,12 @@ _CONV_ID = re.compile(r"\bCONV-\d{3}\b")
 
 
 def _is_tool(f: Finding) -> bool:
+    """Deterministic tool finding (bandit, ruff, ...) rather than an LLM opinion."""
     return not f.source.startswith("llm:")
 
 
 def _duplicate(a: Finding, b: Finding) -> bool:
+    """Same file, at most 2 lines apart, same category (security and bug count as one)."""
     same_kind = a.category == b.category or {a.category, b.category} <= {"security", "bug"}
     return a.file == b.file and abs(a.line - b.line) <= 2 and same_kind
 
@@ -32,6 +41,7 @@ def _valid_convention(f: Finding, known_ids: set[str]) -> bool:
 
 
 def aggregate(state: ReviewState, config: RunnableConfig) -> dict:
+    """Filter, dedupe, rank, cap and number the raw findings (see module docstring)."""
     settings = get_deps(config).settings
     known_ids = set(_CONV_ID.findall(state.get("conventions", "")))
     raw = [

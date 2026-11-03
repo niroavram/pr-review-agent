@@ -7,7 +7,7 @@ import difflib
 from pydantic import BaseModel
 
 from pr_agent import gitutil
-from pr_agent.agents.llm import UNTRUSTED_NOTICE, load_prompt, untrusted
+from pr_agent.agents.llm import UNTRUSTED_NOTICE, describe_finding, load_prompt, untrusted
 from pr_agent.deps import LLM
 from pr_agent.models import Finding, FixProposal, PRContext, fix_type_for
 
@@ -54,13 +54,10 @@ def apply_edits(files: dict[str, str], edits: list[Edit]) -> dict[str, str] | No
 
 def _user_message(finding: Finding, files: dict[str, str], boundaries: str, feedback: str) -> str:
     """Finding, current file content (untrusted) and optional limits/feedback."""
-    parts = [
-        "## Finding",
-        f"{finding.file}:{finding.line} [{finding.rule_id or finding.source}] "
-        f"({finding.severity}) {finding.message}",
-    ]
+    parts = ["## Finding", describe_finding(finding)]
     for path, content in files.items():
-        parts += [f"## Current content of {path}", untrusted(f"file:{path}", content)]
+        # The path is PR-controlled, so it only appears inside the wrapper's label.
+        parts += ["## Current file content", untrusted(f"file:{path}", content)]
     if boundaries:
         parts += ["## Autonomy boundaries (context)", boundaries]
     if feedback:

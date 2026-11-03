@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TypeVar
 
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel
 
+from pr_agent.models import Finding
 from pr_agent.settings import Settings
 
 T = TypeVar("T", bound=BaseModel)
@@ -20,6 +22,9 @@ UNTRUSTED_NOTICE = (
 )
 
 _CLOSE_TAG = "</untrusted_pr_content>"
+# Any opening or closing tag spelling (case, spaces) an attacker might use to fake a boundary.
+_TAG_LIKE = re.compile(r"<(\s*/?\s*)(untrusted_pr_content)", re.IGNORECASE)
+_LABEL_UNSAFE = re.compile(r"[^A-Za-z0-9._/:@+-]")
 
 
 def load_prompt(name: str) -> str:
@@ -28,10 +33,24 @@ def load_prompt(name: str) -> str:
 
 
 def untrusted(label: str, text: str) -> str:
-    """Wrap PR-author text in a tag; a literal closing tag inside it is defused."""
-    safe_label = label.replace('"', "'")
-    body = text.replace(_CLOSE_TAG, "</untrusted_pr_content_>")
+    """Wrap PR-author text in a tag that the text itself cannot open or close.
+
+    Every `<untrusted_pr_content` / `</untrusted_pr_content` spelling inside the text becomes
+    `&lt;...`, so only our own closing tag ends the block. The label (often a PR-controlled
+    file path) is reduced to a safe character set so it cannot break out of the attribute.
+    """
+    safe_label = _LABEL_UNSAFE.sub("_", label)
+    body = _TAG_LIKE.sub(r"&lt;\1\2", text)
     return f'<untrusted_pr_content source="{safe_label}">\n{body}\n{_CLOSE_TAG}'
+
+
+def describe_finding(finding: Finding) -> str:
+    """The finding as untrusted text: its path and message may echo PR-author content."""
+    text = (
+        f"{finding.file}:{finding.line} [{finding.rule_id or finding.source}] "
+        f"({finding.severity}) {finding.message}"
+    )
+    return untrusted("finding", text)
 
 
 class AnthropicLLM:
@@ -42,8 +61,11 @@ class AnthropicLLM:
         self._clients: dict[str, ChatAnthropic] = {}
 
     def model_for(self, role: str) -> str:
-        """review/rule roles use the review model; fix/critic use the fix model."""
-        return self.settings.fix_model if role in {"fix", "critic"} else self.settings.review_model
+        """Roles like "fix" or "critic:x" use the fix model; "review:<kind>", "rule" and
+        anything else use the cheaper review model."""
+        if role.startswith(("fix", "critic")):
+            return self.settings.fix_model
+        return self.settings.review_model
 
     def _client(self, model: str) -> ChatAnthropic:
         """One chat client per model name, created on first use."""
