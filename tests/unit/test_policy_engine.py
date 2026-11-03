@@ -1,8 +1,11 @@
+import difflib
+
 import pytest
 
 from pr_agent.models import Finding, FixProposal, Level, Verification
 from pr_agent.policy.config import TEMPLATE, AutonomyConfig, parse_config
-from pr_agent.policy.engine import decide, patch_paths, path_level, pre_ceiling
+from pr_agent.policy.engine import decide, path_level, pre_ceiling
+from pr_agent.policy.facts import patch_paths
 
 
 @pytest.fixture(scope="module")
@@ -98,6 +101,56 @@ def test_failed_verification_comments(cfg: AutonomyConfig) -> None:
 def test_unfixable_comments(cfg: AutonomyConfig) -> None:
     f = _finding("tests/x.py").model_copy(update={"fixable": False})
     assert decide(f, _proposal("tests/x.py"), OK, cfg).level is Level.COMMENT
+
+
+def _udiff(path: str, before: list[str], after: list[str]) -> str:
+    lines = difflib.unified_diff(before, after, f"a/{path}", f"b/{path}")
+    return "".join(lines)
+
+
+def _lint(rule: str, file: str = "tests/x.py") -> Finding:
+    return Finding(id="F1", source="ruff", rule_id=rule, category="lint", file=file, message="m")
+
+
+def _lint_fix(patch: str) -> FixProposal:
+    return FixProposal(finding_id="F1", patch=patch, fix_type="lint")
+
+
+def test_limits_downgrade_auto_to_suggest(cfg: AutonomyConfig) -> None:
+    old = [f"x{i} = {i}\n" for i in range(30)]
+    small = _udiff("tests/x.py", old, old[1:])  # 1 line
+    assert decide(_lint("ruff:F401"), _lint_fix(small), OK, cfg).level is Level.AUTO
+    big = _udiff("tests/x.py", old, old[21:])  # 21 lines removed > 20
+    d = decide(_lint("ruff:F401"), _lint_fix(big), OK, cfg)
+    assert d.level is Level.SUGGEST and d.decided_by == "limits.auto_max_lines (20)"
+    many = "".join(_udiff(f"tests/t{i}.py", ["a\n"], ["b\n"]) for i in range(4))  # 4 files > 3
+    d = decide(_lint("ruff:F401"), _lint_fix(many), OK, cfg)
+    assert d.level is Level.SUGGEST and d.decided_by == "limits.auto_max_files (3)"
+
+
+@pytest.mark.parametrize(
+    ("rule", "level", "decided_by"),
+    [
+        ("ruff:F401", Level.AUTO, 'paths[3] "tests/**" -> low'),
+        ("ruff:E501", Level.SUGGEST, "lint_rules: unlisted ruff:E501 -> suggest"),
+        ("ruff:B006", Level.SUGGEST, 'lint_rules.suggest "ruff:B*" -> suggest'),
+        ("custom:SEC-1", Level.COMMENT, 'lint_rules.comment "custom:SEC-*" -> comment'),
+        ("custom:NAMING-001", Level.AUTO, 'paths[3] "tests/**" -> low'),
+    ],
+)
+def test_lint_rule_caps(cfg: AutonomyConfig, rule: str, level: Level, decided_by: str) -> None:
+    d = decide(_lint(rule), _lint_fix(_udiff("tests/x.py", ["a\n"], ["b\n"])), OK, cfg)
+    assert (d.level, d.decided_by) == (level, decided_by)
+
+
+def test_lint_cap_ignores_non_lint_findings(cfg: AutonomyConfig) -> None:
+    f = _finding("tests/x.py").model_copy(update={"rule_id": "bandit:B608"})
+    assert decide(f, _proposal("tests/x.py"), OK, cfg).decided_by == "fix_types.security -> suggest"
+
+
+def test_hard_rule_wins_without_repo_facts(cfg: AutonomyConfig) -> None:
+    d = decide(_lint("ruff:F401"), _lint_fix(_udiff("uv.lock", ["a\n"], ["b\n"])), OK, cfg)
+    assert d.level is Level.FORBIDDEN and d.decided_by == "hard_rule:no_dependency_change"
 
 
 def test_forbidden_location_reports_owners_without_patch(cfg: AutonomyConfig) -> None:

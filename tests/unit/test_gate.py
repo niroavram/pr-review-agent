@@ -46,6 +46,15 @@ def test_no_candidates_no_interrupt() -> None:
     assert out["approved"] == [] and out["decisions"][0].level is Level.COMMENT
 
 
+def test_hard_rule_patch_is_forbidden_and_not_a_candidate() -> None:
+    skip = "--- a/tests/t.py\n+++ b/tests/t.py\n@@ -1 +1,2 @@\n+@pytest.mark.skip\n def test_x():\n"
+    fix = FixProposal(finding_id="F1", patch=skip, fix_type="security", critic_verdict="accept")
+    out = policy_gate(_state(fixes=[fix]), EMPTY)  # would raise if it tried to interrupt
+    [d] = out["decisions"]
+    assert d.level is Level.FORBIDDEN and d.decided_by == "hard_rule:no_test_skip"
+    assert out["approved"] == []
+
+
 def test_rejected_fix_is_not_a_proposal() -> None:
     out = policy_gate(_state(fixes=[_fix("F1", "src/store/orders.py", "reject")]), EMPTY)
     assert out["decisions"][0].level is Level.COMMENT and out["approved"] == []
