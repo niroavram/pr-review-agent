@@ -52,8 +52,8 @@ def build_fix_pipeline():  # type: ignore[no-untyped-def]
     g.add_node("verify", verify_fix)
     g.add_node("done", fix.done)
     g.add_edge(START, "propose")
-    g.add_conditional_edges(
-        "propose", lambda s: "critic" if s.get("proposal") else "done", ["critic", "done"]
+    g.add_conditional_edges(  # deterministic (tool) fixes skip the LLM critic
+        "propose", fix.route_after_propose, {"critic": "critic", "verify": "verify", "done": "done"}
     )
     g.add_conditional_edges(
         "critic", fix.route_after_critic, {"propose": "propose", "verify": "verify", "done": "done"}
