@@ -19,7 +19,6 @@ from pr_agent.agents.critic import CriticOutput
 from pr_agent.agents.fixer import FixOutput, apply_edits
 from pr_agent.agents.llm import load_prompt
 from pr_agent.agents.reviewers import ReviewOutput
-from pr_agent.analyzers import ANALYZERS
 from pr_agent.demo import DEMO_DIR, demo_secret, list_cases, load_case, render
 from pr_agent.gitutil import git, show_file
 from pr_agent.settings import Settings
@@ -139,30 +138,23 @@ def test_scripted_llm_picks_fix_by_location() -> None:
 
 # --- offline end to end -----------------------------------------------------------------
 
-NO_RUFF = pytest.mark.xfail(
-    "ruff" not in ANALYZERS,
-    reason="src/ has no ruff analyzer / deterministic ruff fix yet (ANALYZERS has no 'ruff'), "
-    "so the F401 finding is never produced",
-    strict=False,
-)
-LOOP_ON = Settings().converge  # PR_AGENT_CONVERGE=1
-LOOP_FORMAT = pytest.mark.xfail(
-    LOOP_ON,
-    reason="with the loop on, round 2 also auto-fixes the ruff:format finding the F401 fix "
-    "leaves behind (blank lines); expected.json lists only F401, so precision is 0.5",
+LOOP_ON = Settings().converge  # default on; PR_AGENT_CONVERGE=0 runs a single round
+SINGLE_ROUND = pytest.mark.xfail(
+    not LOOP_ON,
+    reason="single-round mode: the ruff:format finding the F401 fix leaves behind is only "
+    "fixed by convergence round 2",
     strict=False,
 )
 DETERMINISTIC = [
     pytest.param("01", id="01_sql_injection"),
     pytest.param("09", id="09_critical_path_bug"),
     pytest.param("10", id="10_config_tamper"),
-    pytest.param("11", id="11_low_path_lint", marks=[NO_RUFF, LOOP_FORMAT]),
+    pytest.param("11", id="11_low_path_lint", marks=SINGLE_ROUND),
     pytest.param("12", id="12_low_and_critical"),
-    pytest.param("13", id="13_round_two_lint", marks=NO_RUFF),
+    pytest.param("13", id="13_round_two_lint", marks=SINGLE_ROUND),
 ]
-# Not graded here: rule learning (stream 3C) is not wired yet, and the single-round graph
-# has no escalate node, so open findings are never escalated with the loop off.
-PENDING = {"rule_valid_case01"} | (set() if LOOP_ON else {"escalations_complete", "converged"})
+# The single-round graph has no escalate node, so open findings are never escalated there.
+PENDING = set() if LOOP_ON else {"escalations_complete", "converged"}
 
 
 @pytest.mark.parametrize("prefix", DETERMINISTIC)
@@ -197,7 +189,6 @@ def test_offline_case_passes_evaluators(demo_repo: Path, tmp_path: Path, prefix:
         assert fixed is not None and "import sys" not in fixed
 
 
-@NO_RUFF
 def test_case13_converges_in_round_two(demo_repo: Path, tmp_path: Path) -> None:
     """Loop on: the UP045 fix leaves `Optional` unused (F401), which round 2 fixes; round 3
     finds nothing, so nothing is escalated."""
