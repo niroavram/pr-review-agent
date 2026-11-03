@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import shutil
-import sys
 from collections import Counter
 from pathlib import Path
 
 from langchain_core.runnables import RunnableConfig
 
-from pr_agent.analyzers import ANALYZERS
+from pr_agent.analyzers import AnalysisContext, run_all
 from pr_agent.deps import Deps, get_deps
 from pr_agent.gitutil import apply_patch, materialize
 from pr_agent.models import Finding, FixProposal, PRContext, Verification
@@ -21,16 +20,17 @@ LOG_LIMIT = 2000
 NO_TESTS_COLLECTED = 5  # pytest exit code: "no tests ran"
 
 
-def scan(sandbox: Sandbox, workdir: Path, files: list[str]) -> tuple[list[Finding], list[str]]:
-    """Run all analyzers on files that exist in workdir. Returns (findings, error messages)."""
+def scan(
+    sandbox: Sandbox, workdir: Path, base_dir: Path | None, files: list[str]
+) -> tuple[list[Finding], list[str]]:
+    """Run all analyzers on files that exist in workdir, configured from base_dir.
+
+    Returns (findings, error messages). A tool that is not installed is not an error: it
+    would equally be missing before and after the patch.
+    """
     present = [f for f in files if (workdir / f).is_file()]
-    findings: list[Finding] = []
-    errors: list[str] = []
-    for name, analyzer in ANALYZERS.items():
-        try:
-            findings += analyzer(sandbox, workdir, present)
-        except Exception as e:
-            errors.append(f"{name}: {e}")
+    findings, status = run_all(AnalysisContext(workdir, base_dir, present, sandbox))
+    errors = [f"{name}: {s}" for name, s in status.items() if s.startswith("error")]
     return findings, errors
 
 
@@ -55,26 +55,34 @@ def new_findings(before: list[Finding], after: list[Finding]) -> list[str]:
 
 def run_tests(sandbox: Sandbox, workdir: Path, timeout: int) -> tuple[bool, str]:
     """pytest in the patched checkout; "no tests ran" counts as a pass. Returns (ok, log tail)."""
-    python = sys.executable if sandbox.mode == "local" else "python"
-    res = sandbox.run([python, "-m", "pytest", "-q", "-x"], workdir, timeout=timeout)
+    cmd = [*sandbox.python(), "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider"]
+    res = sandbox.run(cmd, workdir, timeout=timeout)
     ok = not res.timed_out and res.returncode in (0, NO_TESTS_COLLECTED)
     tail = (res.stdout + res.stderr).strip().splitlines()[-5:]
     return ok, "timed out" if res.timed_out else " | ".join(tail)
 
 
 def check_patch(
-    deps: Deps, finding: Finding, ctx: PRContext, patch: str, workdir: Path
+    deps: Deps,
+    finding: Finding,
+    ctx: PRContext,
+    patch: str,
+    workdir: Path,
+    base_dir: Path | None = None,
 ) -> tuple[dict[str, bool], list[str]]:
-    """Run the checks in order inside workdir (a clean head checkout). Returns (checks, log)."""
+    """Run the checks in order inside workdir (a clean head checkout). Returns (checks, log).
+
+    base_dir is the materialized base sha, the source of analyzer configs.
+    """
     files = patch_paths(patch)
     ok, err = apply_patch(workdir, patch, check_only=True)
     if not ok:
         return {"applies": False}, [f"git apply --check failed: {err.strip()}"]
-    before, errors_before = scan(deps.sandbox, workdir, files)
+    before, errors_before = scan(deps.sandbox, workdir, base_dir, files)
     ok, err = apply_patch(workdir, patch)
     if not ok:
         return {"applies": False}, [f"git apply failed: {err.strip()}"]
-    after, errors_after = scan(deps.sandbox, workdir, files)
+    after, errors_after = scan(deps.sandbox, workdir, base_dir, files)
     errors = errors_before + errors_after
     grown = new_findings(before, after)
     log = [f"analyzer error: {e}" for e in errors] + [f"new finding: {g}" for g in grown]
@@ -102,10 +110,12 @@ def verify_fix(state: dict, config: RunnableConfig) -> dict:
     deps = get_deps(config)
     ctx: PRContext = state["ctx"]
     workdir = materialize(ctx.repo_path, ctx.head_sha)
+    base_dir = materialize(ctx.repo_path, ctx.base_sha)
     try:
-        checks, log = check_patch(deps, state["finding"], ctx, proposal.patch, workdir)
+        checks, log = check_patch(deps, state["finding"], ctx, proposal.patch, workdir, base_dir)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+        shutil.rmtree(base_dir, ignore_errors=True)
     verification = Verification(
         finding_id=proposal.finding_id,
         passed=all(checks.values()),

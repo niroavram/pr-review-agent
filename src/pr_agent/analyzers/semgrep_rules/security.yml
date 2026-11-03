@@ -1,0 +1,104 @@
+# Vendored, offline security rules for pr-agent. Findings surface as semgrep:<id>.
+rules:
+  - id: sql-built-from-string
+    message: >-
+      SQL text built with an f-string, `%` or `+` and passed to .execute(): a SQL injection
+      risk. Use a parameterized query (placeholders plus a parameters tuple).
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-89: SQL Injection"
+    patterns:
+      - pattern-either:
+          # built inline
+          - pattern: $DB.$EXEC(f"...", ...)
+          - pattern: $DB.$EXEC("..." % $ARGS, ...)
+          - pattern: $DB.$EXEC("..." + $X, ...)
+          - pattern: $DB.$EXEC($X + "...", ...)
+          # built in a variable first: the match starts where the SQL text is built
+          - pattern: |
+              $Q = f"..."
+              ...
+              $DB.$EXEC($Q, ...)
+          - pattern: |
+              $Q = "..." % $ARGS
+              ...
+              $DB.$EXEC($Q, ...)
+          - pattern: |
+              $Q = "..." + $X
+              ...
+              $DB.$EXEC($Q, ...)
+          - pattern: |
+              $Q = $X + "..."
+              ...
+              $DB.$EXEC($Q, ...)
+      - metavariable-regex:
+          metavariable: $EXEC
+          regex: ^(execute|executemany|executescript)$
+
+  - id: subprocess-shell-true
+    message: >-
+      subprocess call with shell=True: any untrusted part of the command is a shell
+      injection. Pass an argument list and leave shell=False.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-78: OS Command Injection"
+    pattern-either:
+      - pattern: subprocess.$FUNC(..., shell=True, ...)
+      - pattern: subprocess.$FUNC(..., shell=1, ...)
+
+  - id: yaml-load-unsafe
+    message: >-
+      yaml.load() without SafeLoader can construct arbitrary Python objects. Use
+      yaml.safe_load() or Loader=yaml.SafeLoader.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+    patterns:
+      - pattern: yaml.load(...)
+      - pattern-not: yaml.load(..., Loader=yaml.SafeLoader, ...)
+      - pattern-not: yaml.load(..., Loader=yaml.CSafeLoader, ...)
+      - pattern-not: yaml.load(..., Loader=SafeLoader, ...)
+      - pattern-not: yaml.load(..., Loader=CSafeLoader, ...)
+
+  - id: pickle-loads
+    message: >-
+      Unpickling can execute arbitrary code. Never unpickle untrusted data; use JSON or
+      another data-only format.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+    pattern-either:
+      - pattern: pickle.loads(...)
+      - pattern: pickle.load(...)
+      - pattern: cPickle.loads(...)
+
+  - id: eval-exec
+    message: >-
+      eval()/exec() runs arbitrary code. Parse the input instead (e.g. ast.literal_eval or
+      json.loads).
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-95: Eval Injection"
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: exec(...)
+      - pattern-not: eval("...")
+      - pattern-not: exec("...")
+
+  - id: requests-verify-false
+    message: >-
+      TLS certificate verification is disabled (verify=False), which allows
+      man-in-the-middle attacks. Remove verify=False or point it at a CA bundle.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      cwe: "CWE-295: Improper Certificate Validation"
+    pattern-either:
+      - pattern: requests.$FUNC(..., verify=False, ...)
+      - pattern: $SESSION.$FUNC(..., verify=False, ...)  # requests.Session(), httpx clients

@@ -57,10 +57,11 @@ def test_case01_end_to_end_with_approval(demo_repo: Path, tmp_path: Path) -> Non
     review = (out / "review.md").read_text()
     summary = json.loads((out / "review.json").read_text())
 
-    assert [f["rule_id"] for f in summary["findings"]] == ["bandit:B608"]  # tool wins dedupe
+    # A tool wins dedupe: semgrep (high) outranks bandit B608 (medium) on the same line.
+    assert [f["rule_id"] for f in summary["findings"]] == ["semgrep:sql-built-from-string"]
     assert summary["decisions"][0]["level"] == "suggest"
     assert summary["applied"] == ["F1"]
-    assert "F1" in review and "B608" in review
+    assert "F1" in review and "sql-built-from-string" in review
     assert (out / "patches" / "F1.patch").exists()
     branch = summary["autofix_branch"]
     fixed = show_file(demo_repo, git(demo_repo, "rev-parse", branch).strip(), "src/store/orders.py")
