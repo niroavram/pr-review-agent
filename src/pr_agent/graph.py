@@ -77,7 +77,7 @@ def fan_out_fixes(state: ReviewState, config: RunnableConfig) -> list[Send] | st
     candidates = [
         f
         for f in state.get("final_findings", [])
-        if f.fixable and pre_ceiling(f, cfg) <= Level.SUGGEST
+        if f.fixable and pre_ceiling(f, cfg, state["ctx"]) <= Level.SUGGEST
     ][: settings.max_fixes]
     if not candidates:
         return "policy_gate"
