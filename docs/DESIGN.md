@@ -72,6 +72,7 @@ The agent workflow is orchestrated with **LangGraph** and traced and evaluated w
 - **Webhook auth**: HMAC `X-Hub-Signature-256` verification with constant-time compare, and replay protection.
 - **Write safety**: never push to protected branches or force-push. Autofix commits are signed as the App, and every applied fix is linked to a trace id for audit.
 - **Supply chain**: pin tool versions in the sandbox image, and scan our own deps (osv-scanner in our CI).
+- **The checkout is hostile too**: tools run as `python -P -m <tool>`, so a PR-supplied `ruff.py` can't shadow the real tool. Files are materialized from the exact blobs (`ls-tree` + `cat-file`), not `git archive`, because the head's `.gitattributes` could `export-ignore` files away from the scanners. The scanners ignore inline suppressions (`--ignore-nosec`, `--disable-nosem`, `--ignore-gitleaks-allow`), and a fix that adds one is FORBIDDEN by a hard rule.
 
 **Performance**
 - Static analyzers and LLM reviewers run in **parallel** (LangGraph fan-out via `Send`).

@@ -103,7 +103,14 @@ def resume_review(run_id: str, deps: Deps, approve: list[str]) -> RunResult:
     cfg["configurable"]["checkpoint_id"] = before_gate.config["configurable"]["checkpoint_id"]
     first = graph.invoke(None, cfg)
     cfg["configurable"].pop("checkpoint_id")
-    result = first
-    if first.get("__interrupt__"):
-        result = _drive(graph, Command(resume=approve), cfg, _approve_none, _answer_none)
+    pending = first.get("__interrupt__")
+    if not pending or "suggest" not in pending[0].value:
+        raise ValueError(f"run {run_id} has no fixes awaiting approval at its latest gate")
+    offered = {p["id"] for p in pending[0].value["suggest"]}
+    unknown = sorted(set(approve) - offered)
+    if unknown:
+        raise ValueError(
+            f"not awaiting approval: {', '.join(unknown)} (offered: {sorted(offered)})"
+        )
+    result = _drive(graph, Command(resume=approve), cfg, _approve_none, _answer_none)
     return RunResult(run_id, result, _trace_url(tracer))

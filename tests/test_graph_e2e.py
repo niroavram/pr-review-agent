@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from pr_agent.agents.critic import CriticOutput
 from pr_agent.agents.fixer import Edit, FixOutput
 from pr_agent.agents.reviewers import LLMFinding, ReviewOutput
@@ -91,3 +93,12 @@ def test_case01_resume_applies_later_approval(demo_repo: Path, tmp_path: Path) -
     new_calls = deps.llm.calls[calls_before:]  # type: ignore[attr-defined]
     assert all(c["schema"] == "ReviewOutput" for c in new_calls)
     assert not any("WHERE customer = '{customer}'" in c["user"] for c in new_calls)
+
+
+def test_resume_rejects_ids_not_awaiting_approval(demo_repo: Path, tmp_path: Path) -> None:
+    """An approval may only answer the approval gate, never another interrupt."""
+    ctx = load_local(demo_repo, "main", "case/01-sql-injection")
+    deps = _deps(tmp_path)
+    first = run_review(ctx, deps)
+    with pytest.raises(ValueError, match="F99"):
+        resume_review(first.run_id, deps, ["F99"])

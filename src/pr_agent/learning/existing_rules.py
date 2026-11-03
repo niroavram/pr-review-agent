@@ -12,7 +12,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from pr_agent.analyzers.base import relative_path
+from pr_agent.analyzers.base import relative_path, tool_cmd
 from pr_agent.analyzers.ruff import base_config
 from pr_agent.models import Finding
 from pr_agent.sandbox import Sandbox
@@ -101,13 +101,13 @@ def priority(hit: RuleHit) -> tuple[int, int]:
 
 def _ruff_cmd(sandbox: Sandbox, select: str, target: str) -> list[str]:
     return [
-        *sandbox.python(), "-m", "ruff", "check", "--no-cache", "--isolated",
+        *tool_cmd(sandbox, "ruff"), "check", "--no-cache", "--isolated",
         "--select", select, "--output-format", "json", "--exit-zero", target,
     ]  # fmt: skip
 
 
 def _bandit_cmd(sandbox: Sandbox, target: str, test: str | None = None) -> list[str]:
-    cmd = [*sandbox.python(), "-m", "bandit", "-q", "-f", "json"]
+    cmd = [*tool_cmd(sandbox, "bandit"), "-q", "-f", "json"]
     if test:
         cmd += ["-t", test]
     return [*cmd, "-r", target] if target == "." else [*cmd, target]

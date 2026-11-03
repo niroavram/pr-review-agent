@@ -17,7 +17,8 @@ def _title(state: ReviewState) -> str:
 
 
 def _banners(state: ReviewState) -> str:
-    return "\n\n".join(f"> {b}" for b in state.get("banners", []))
+    unique = list(dict.fromkeys(state.get("banners", [])))  # each round may re-add a banner
+    return "\n\n".join(f"> {b}" for b in unique)
 
 
 def _summary(findings: list[Finding], decisions: list[PolicyDecision]) -> str:

@@ -97,6 +97,10 @@ def fan_out_fixes(state: ReviewState, config: RunnableConfig) -> list[Send] | st
                 "config": state.get("config"),
                 "conventions": state.get("conventions", ""),
                 "attempts": 0,
+                "max_revisions": settings.max_revisions,
+                # new lint a fix introduces may wait for the next round only if one exists
+                "can_defer": settings.converge
+                and state.get("round", 1) < state.get("max_rounds", settings.max_rounds),
             },
         )
         for f in candidates
@@ -160,6 +164,7 @@ def serializer() -> JsonPlusSerializer:
                 "ChangedFile",
                 "PRContext",
                 "RuleProposal",
+                "Escalation",
             )
         ]
     )
