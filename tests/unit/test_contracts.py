@@ -78,3 +78,22 @@ def test_redaction() -> None:
     assert value not in out.splitlines()[0] and "[REDACTED]" in out
     assert redact({"a": [f'password="{value}"']}) == {"a": ['password="[REDACTED]"']}
     assert redact_text('password = "hello"') == 'password = "hello"'  # short/low-entropy kept
+
+
+@pytest.mark.parametrize(
+    ("source", "category", "rule", "expected"),
+    [
+        ("bandit", "security", "bandit:B608", "security"),
+        ("ruff", "lint", "ruff:F401", "lint"),
+        ("ruff", "format", None, "format"),
+        ("semgrep", "lint", "custom:ERR-001", "lint"),
+        ("llm:conventions", "convention", "conv:CONV-004", "lint"),
+        ("llm:bug", "bug", None, "bug"),
+        ("pytest", "test", None, "bug"),
+    ],
+)
+def test_fix_type_for(source: str, category: str, rule: str | None, expected: str) -> None:
+    from pr_agent.models import fix_type_for
+
+    f = Finding(source=source, category=category, rule_id=rule, file="a.py", message="m")  # type: ignore[arg-type]
+    assert fix_type_for(f) == expected
