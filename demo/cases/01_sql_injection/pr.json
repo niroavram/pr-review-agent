@@ -1,0 +1,5 @@
+{
+  "branch": "case/01-sql-injection",
+  "title": "Add order search by customer",
+  "description": "Adds `find_orders_by_customer` so support can look up a customer's orders."
+}

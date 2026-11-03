@@ -1,0 +1,58 @@
+# .pr-agent.yml — autonomy boundaries for the PR agent
+# Read from the BASE branch only. Missing/invalid file = everything suggest-only.
+version: 1
+
+levels:                 # what each sensitivity level allows
+  low:      auto        # fix, verify, commit to autofix/<pr>
+  medium:   suggest     # suggestion block, needs /autofix apply
+  high:     comment     # explain the problem, no patch
+  critical: forbidden   # no patch, tag owners
+
+default_sensitivity: medium   # any path/route not listed below
+
+limits:
+  auto_max_lines: 20
+  auto_max_files: 3
+
+paths:                  # sensitivity table: code
+  - match: ["src/payments/**", "src/auth/**", "**/crypto/**"]
+    sensitivity: critical
+    owners: ["@payments-team"]
+    reason: "Money movement and authentication"
+  - match: ["migrations/**", "infra/**"]
+    sensitivity: high
+    owners: ["@platform"]
+  - match: ["src/api/**"]
+    sensitivity: medium
+  - match: ["docs/**", "tests/**", "scripts/**"]
+    sensitivity: low
+
+routes:                 # sensitivity table: API
+  - match: "POST /v1/payments/*"
+    sensitivity: critical
+    owners: ["@payments-team"]
+  - match: "* /v1/admin/*"
+    sensitivity: high
+  - match: "GET /v1/public/*"
+    sensitivity: medium
+
+fix_types:              # max autonomy per fix type
+  format: auto
+  lint: auto
+  typo: auto
+  bug: suggest
+  security: suggest
+  public_api_change: comment
+
+lint_rules:             # our lint rules (ruff + custom)
+  auto: ["ruff:I001", "ruff:F401", "ruff:UP*", "custom:NAMING-*"]
+  suggest: ["ruff:B*", "custom:ERR-*"]
+  comment: ["custom:SEC-*"]
+
+conventions:
+  file: CONVENTIONS.md  # every rule has an ID (CONV-012); findings must cite it
+
+# Not configurable, enforced in code:
+#  never edit this file, CONVENTIONS.md, lint configs, CODEOWNERS or CI
+#  never delete or skip tests
+#  never add or upgrade dependencies

@@ -1,0 +1,10 @@
+{
+  "findings": [
+    {"category": "security", "file": "src/store/orders.py", "line": 20, "keywords": ["sql", "injection"]}
+  ],
+  "zero_findings": false,
+  "decisions": {"src/store/orders.py": "suggest"},
+  "owners_tagged": [],
+  "fix_expected": true,
+  "rule_proposal_expected": true
+}

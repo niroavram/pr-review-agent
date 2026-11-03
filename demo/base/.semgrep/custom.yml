@@ -1,0 +1,21 @@
+rules:
+  - id: ERR-001
+    message: "Bare `except: pass` swallows every error (ERR-001)"
+    languages: [python]
+    severity: WARNING
+    pattern: |
+      try:
+        ...
+      except:
+        pass
+  - id: NAMING-001
+    message: "Function names are snake_case (NAMING-001)"
+    languages: [python]
+    severity: INFO
+    patterns:
+      - pattern: |
+          def $F(...):
+            ...
+      - metavariable-regex:
+          metavariable: $F
+          regex: "^_?[a-z]+[A-Z][A-Za-z0-9]*$"
