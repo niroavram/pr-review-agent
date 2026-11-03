@@ -6,6 +6,8 @@ It is built with **LangGraph**: fan-out reviewers, a propose → critique → ve
 
 ## Documentation
 
+The docs folder has the full plan. IMPLEMENTATION_PLAN.md covers how the system is built, DESIGN.md covers the production architecture and the trade-offs behind it, and AGENTS.md describes each agent's role, what it gets, what it returns, and its limits.
+
 - [Implementation plan (MVP)](docs/IMPLEMENTATION_PLAN.md): scope, decisions, autonomy boundaries, graph, rule learning, convergence loop, waves, eval cases
 - [Design (production architecture)](docs/DESIGN.md): threat model, performance, scalability, production path
 - [Agents and roles](docs/AGENTS.md): every LLM agent and deterministic role, with inputs, output schema, permissions, escalation and eval metric
