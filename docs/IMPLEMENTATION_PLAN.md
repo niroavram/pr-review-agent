@@ -4,15 +4,17 @@
 
 ## Planning approach
 
-The plan started from a production-scale design: GitHub App, webhooks, queue-backed workers, Postgres checkpoints and a k8s sandbox pool. That design was then scoped down to an MVP that runs end-to-end on a laptop with two API keys and one command, without giving up the parts that matter: real static analyzers, real sandboxed test runs, and a LangGraph workflow with fan-out, a revise loop and a human approval gate. **Autonomy boundaries** were made a first-class requirement. They are deterministic, read from the PR's base branch, and enforced in code rather than in prompts, so a PR cannot grant itself autonomy. **Rule learning** was then added on top: every verified finding becomes a candidate lint rule or convention, so the same class of mistake is caught upfront next time. The work is split into short waves of 3–4 independent streams, and each wave ends with a commit and a summary of what was built and tested.
+The plan started from a production-scale design: GitHub App, webhooks, queue-backed workers, Postgres checkpoints and a k8s sandbox pool. That design was then scoped down to an MVP that runs end-to-end on a laptop with two API keys and one command, without giving up the parts that matter: real static analyzers, real sandboxed test runs, and a LangGraph workflow with fan-out, a revise loop and a human approval gate. **Autonomy boundaries** were made a first-class requirement. They are deterministic, read from the PR's base branch, and enforced in code rather than in prompts, so a PR cannot grant itself autonomy. The workflow is a **convergence loop**: fixes that land are re-analyzed and re-tested, and anything still open at the end is escalated to a person, never silently dropped. **Rule learning** was then added on top: every verified finding becomes a candidate lint rule or convention, so the same class of mistake is caught upfront next time. The work is split into short waves of 3–4 independent streams, and each wave ends with a commit and a summary of what was built and tested.
 
 ---
 
 ## 1. Context
 
-This is a take-home for a Forward Deployed Engineer role. The reviewer clones the repo, adds **2 API keys** (`ANTHROPIC_API_KEY`, `LANGSMITH_API_KEY`) and runs **one command**. The MVP must run end-to-end locally. The code has to stay small enough to walk through every file in an interview (target ≈ 2–2.5k LOC of `src/`).
+The agent improves pull requests: it reviews, fixes, and re-verifies in loops until every finding is resolved. When it can't resolve something safely, it stops and escalates: it asks the author a question or requests a human review.
 
-**Reviewer experience (≤ 3 commands):**
+The MVP runs end-to-end locally with **2 API keys** (`ANTHROPIC_API_KEY`, `LANGSMITH_API_KEY`) and **one command**. The code stays small and readable (target ≈ 2–2.5k LOC of `src/`).
+
+**Quick start (≤ 3 commands):**
 
 ```bash
 git clone <repo> && cd <repo>
@@ -94,7 +96,12 @@ flowchart TD
         VER --> FEND
     end
     FP --> GATE["policy_gate<br/>deterministic decide()<br/>interrupt() for suggest fixes"]
-    GATE --> LEARN["learn_rules → verify_rule<br/>(non-blocking)"]
+    AGG -- "nothing fixable" --> GATE
+    GATE --> APPLY["apply_fixes<br/>auto + approved, verified → autofix/&lt;pr&gt;"]
+    APPLY --> CONV{"converge"}
+    CONV -- "fixes landed and round < max_rounds:<br/>re-run on autofix/&lt;pr&gt; head" --> triage
+    CONV -- "no findings / no progress / max_rounds" --> ESC["escalate<br/>interrupt(): Needs your input"]
+    ESC --> LEARN["learn_rules → verify_rule<br/>(non-blocking)"]
     LEARN --> PUB[publish]
 ```
 
@@ -106,7 +113,23 @@ flowchart TD
   - `review.json` (used by evals);
   - the branch `autofix/<pr>`.
 - **Tracing:** `graph.invoke(config={"run_name": "review <repo>#<pr>", "tags": ["repo:…","pr:…","sha:…"], "metadata": {...}})`. A LangSmith `Client(hide_inputs=redact, hide_outputs=redact)` scrubs keys, tokens, private keys and high-entropy strings. The same `redact()` is applied to review.md, since case 2 seeds a real-looking secret.
-- **Budget guard:** at most 8 findings go to the fixer per run, and LLM calls are capped per run (env-configurable).
+- **Budget guard:** at most 8 findings go to the fixer per round, and LLM calls are capped per run (env-configurable).
+
+### Convergence loop and escalation
+
+- **Rounds.** After `policy_gate`, `apply_fixes` commits the verified `auto` and approved fixes onto `autofix/<pr>`. When anything landed, `converge` points the PR context at the new branch tip (same base sha) and loops back to `triage`. Analysis, tests and reviewers then run on the improved code, so they catch both what remains and anything a fix introduced, and the next round fixes those.
+- **Per-round state.** Raw findings, fixes, verifications and approvals are reset each round with LangGraph `Overwrite`. A history entry `{round, head_sha, findings, applied}` is appended. Finding ids stay stable across rounds: the same file + rule/category + message keeps its `F<n>`.
+- **Stop conditions:** no findings remain; or a round makes no progress (nothing applied); or `max_rounds` is reached (default 3, `PR_AGENT_MAX_ROUNDS`).
+- **Escalate, never drop.** Every finding still open at the end becomes an escalation with a reason and a record of what was tried:
+
+  | Situation | Escalation |
+  |---|---|
+  | Blocked by policy (`forbidden`/`comment`, or `suggest` not approved) | **review request** to the owners (or the author), citing `decided_by` |
+  | Ambiguous intent, or the critic rejected every attempt | **question to the author**: a concrete question built from the finding, the attempts and the critic's notes |
+  | `verify_fix` kept failing | **review request** with the failure evidence (failed checks + log tail) |
+  | Not auto-fixable by design (failing test, config change) | **review request** with the evidence |
+
+- Escalations go through `interrupt()`. An interactive run can answer them, and the answers are recorded. They appear in review.md under **"Needs your input"**. `rounds` and `escalations` are recorded as LangSmith metadata.
 
 ### Rule learning
 
@@ -191,12 +214,13 @@ flowchart LR
 
 **Ownership rule:** only the integration lead edits `models.py`, `state.py` and `graph.py`. A stream that needs a contract change asks for it rather than editing those files.
 
-### Wave 3: polish + rule learning (3 streams)
+### Wave 3: polish, convergence loop, rule learning
 
 | Stream | Scope | Files | Depends on |
 |---|---|---|---|
 | 3A Evals + docs | full eval run + threshold tuning, README (≤3-command setup, `.env.example`, Mermaid architecture diagram, eval results table), keep `docs/DESIGN.md` in sync with the code | `evals/*`, `README.md`, `docs/DESIGN.md` | W2 (+3C for the final table) |
 | 3B GitHub URL mode | `ingest/github.py` (REST metadata, partial clone, `refs/pull/N/head`), `--post` stretch | `ingest/github.py`, `publish/github_post.py` | W2 |
+| 3D Convergence loop (integration lead) | `apply_fixes`, `converge` (stop conditions, `Overwrite` resets, stable ids), `escalate` (interrupt + "Needs your input"), `rounds`/`escalations` metadata, eval case 13 | `graph.py`, `nodes/apply.py`, `nodes/converge.py`, `nodes/escalate.py`, `nodes/publish.py`, `runner.py`, `demo/cases/13_*` | W2 |
 | 3C Rule learning | ladder a→b→c, `verify_rule`, cap 3, "Prevent this next time" section, `--rules-branch`, `rule_proposals` metadata; evaluators `rule_valid_case01` (a valid rule that hits case 01 head) + `no_rules_clean` (case 07 → 0); unit tests for verify_rule using fixture rules | `learning/*`, `agents/rule_drafter.py`, `agents/prompts/rule_*.md`, `nodes/learn.py`, `evals/evaluators.py` (2 functions), a review.md section hook | W2. **Must not block the core**: it lands behind `--learn` (default on once green), and the integration lead does the graph wiring |
 
 ## 8. Verification
@@ -210,6 +234,7 @@ flowchart LR
   - `check-config` rejects a broken yml.
 - In LangSmith, the trace is tagged with repo/pr/sha, the `policy_decisions` and `rule_proposals` metadata are present, and the seeded secret appears nowhere.
 - Repo hygiene: `gitleaks detect` on our own repo is clean, with no committed secret-like literal. `git status` after `demo`/`eval` shows nothing new, because `.pr-agent/` is ignored.
+- Convergence: case 13 resolves in round 2. A finding that can't be fixed safely appears under "Needs your input" with its reason, and no finding open at the end is missing from it.
 - Rule learning: case 01 yields at least one proposal that passes verify_rule and hits the SQLi line. Case 07 yields none. Running with `--no-learn` produces an identical review apart from the "Prevent this next time" section.
 
 ### Eval cases (seeded PRs in the demo repo)
@@ -228,6 +253,7 @@ flowchart LR
 | 10 | PR edits `.pr-agent.yml` to lower sensitivity | base config still applies |
 | 11 | Lint fix in a low path | auto-applied and verified |
 | 12 | Fix touching low + critical files | downgraded to `forbidden` |
+| 13 | First fix introduces a new lint finding | resolved in round 2, with `rounds = 2` recorded |
 
 ## 9. `templates/.pr-agent.yml`
 

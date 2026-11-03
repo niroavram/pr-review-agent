@@ -4,6 +4,8 @@
 
 ## 1. Problem statement
 
+The agent improves pull requests: it reviews, fixes, and re-verifies in loops until every finding is resolved. When it can't resolve something safely, it stops and escalates: it asks the author a question or requests a human review.
+
 Code review is slow and inconsistent, and the same classes of mistakes keep coming back: injection, leaked secrets, off-by-one errors, convention drift. This system takes a pull request, analyzes the diff, runs the tests, finds bugs and security problems, and checks the team's written conventions. It then **proposes fixes, reviews them, verifies them mechanically, and applies them only where the team's autonomy boundaries allow**. When a mistake is preventable, it also proposes a lint rule or convention so the mistake is caught upfront next time.
 
 The agent workflow is orchestrated with **LangGraph** and traced and evaluated with **LangSmith**. Mature OSS analyzers do the deterministic work. LLM agents handle what tools can't: logic bugs, intent and convention judgement, and fix authoring.
@@ -21,6 +23,8 @@ The agent workflow is orchestrated with **LangGraph** and traced and evaluated w
 | Static tools | ruff, mypy, semgrep, bandit, gitleaks, osv-scanner (+ eslint for JS) | Deterministic and cheap. The LLM triages their findings instead of re-deriving them |
 | Autofix delivery | **GitHub suggestion comments + optional fix commit on a separate `autofix/<pr>` branch/PR**, never a direct push to the author's branch by default | Safe default, easy to revert, author stays in control |
 | Autonomy | `.pr-agent.yml` read from the **base** branch; deterministic policy engine; fail-closed; non-configurable hard rules | Prompts are not enforcement. A PR must not be able to grant itself autonomy |
+| Convergence loop | Landed fixes are re-analyzed and re-tested on the `autofix/<pr>` tip, up to `max_rounds`; stop on no findings or no progress | A fix can introduce new problems; only a re-run on the fixed code proves the PR improved |
+| Escalation | Every finding open at the end becomes a review request (owners, with evidence) or a concrete question to the author, via `interrupt()` | Nothing is silently dropped; the agent knows when to stop and ask |
 | Rule learning | Verified findings become proposed lint rules / conventions, validated deterministically and shipped as a separate human-reviewed change | Fixing the instance is good; preventing the class is better |
 
 ---
@@ -32,7 +36,8 @@ The agent workflow is orchestrated with **LangGraph** and traced and evaluated w
 3. **"Use our conventions"**: there's no written convention source. LLMs can't enforce unwritten rules. *Recommendation:* use a per-repo `.pr-agent.yml` + `CONVENTIONS.md`, plus learned conventions (sample merged PRs / existing lint config). Every convention finding must cite the rule it violates.
 4. **"An agentic team" means more agents = better.** False. More agents mean more cost, latency and duplicate/noisy comments. Noise is the #1 reason teams uninstall review bots. *Recommendation:* deterministic tools first, a few focused LLM reviewers, then a **dedupe + confidence-threshold aggregator** and a hard cap on comments per PR.
 5. **"Reviewer agent validates the fixer"**: an LLM grading an LLM shares blind spots. *Recommendation:* the critic is necessary but not sufficient. Fix acceptance needs **mechanical evidence**: the patch applies cleanly, the tool finding disappears, targeted tests pass, and no new findings are introduced.
-6. **Whole-repo understanding**: the diff alone misses callers and contracts. Full-repo embedding RAG is expensive to keep fresh. *Recommendation (MVP):* on-demand context tools (read file, grep, find symbol references in the sandbox checkout). Add an index later only if evals show a need.
+6. **"Fix everything automatically"** is the wrong goal; **converge or escalate** is the right one. A fix can introduce a new problem, so landed fixes are re-analyzed and re-tested in rounds. Whatever can't be resolved safely becomes a precise human request (a review request with evidence, or a question to the author) instead of being dropped or forced through.
+7. **Whole-repo understanding**: the diff alone misses callers and contracts. Full-repo embedding RAG is expensive to keep fresh. *Recommendation (MVP):* on-demand context tools (read file, grep, find symbol references in the sandbox checkout). Add an index later only if evals show a need.
 
 ## 3. Missing requirements & edge cases
 
@@ -112,8 +117,12 @@ flowchart TD
     VER --> GATE[policy_gate]
     GATE -- needs approval --> INT{{"interrupt()"}}
     CMD["/autofix apply"] --> INT
-    INT --> LEARN["learn_rules → verify_rule<br/>(non-blocking, see §7)"]
-    GATE --> LEARN
+    INT --> APPLY["apply_fixes<br/>commit to autofix/&lt;pr&gt;"]
+    GATE --> APPLY
+    APPLY --> CONV{"converge"}
+    CONV -- "fixes landed, round < max_rounds" --> TRI
+    CONV -- "done / no progress / max_rounds" --> ESC["escalate<br/>interrupt(): review request or author question"]
+    ESC --> LEARN["learn_rules → verify_rule<br/>(non-blocking, see §7)"]
     LEARN --> PUB["publish<br/>one PR review + suggestions + optional autofix PR/commit"]
 ```
 
