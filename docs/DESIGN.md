@@ -1,5 +1,6 @@
-# PR Review & Autofix Agent — Design
+# PR Review & Autofix Agent: Design
 
+> Production architecture. The runnable MVP cut from it is described in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md); §9 "Production path" is the roadmap from one to the other.
 
 ## 1. Problem statement
 
@@ -92,28 +93,28 @@ The agent workflow is orchestrated with **LangGraph** and traced and evaluated w
 
 ## 6. Architecture
 
-```
-GitHub ──webhook──► FastAPI /webhooks (verify HMAC, dedupe, enqueue) ──► Redis (arq)
-                                                                         │
-                                                         Worker: run LangGraph graph
-                                                                         │ (PostgresSaver, LangSmith tracing)
- ingest_pr ─► triage ─► prepare_sandbox ─┬─► static_analysis ─────┐
-                                         ├─► test_runner (CI checks + targeted) ┤
-                                         ├─► bug_reviewer (LLM) ──┤  (fan-out via Send)
-                                         ├─► security_reviewer ───┤
-                                         └─► conventions_reviewer ┘
-                                                         ▼
-                                       aggregate (dedupe, rank, threshold, cap)
-                                                         ▼
-                                  fix_proposer (per fixable finding, Send) ─► fix_critic
-                                                         ▼            ▲ (revise ≤2 loops)
-                                      verify_fix (apply in sandbox, re-run tools+tests)
-                                                         ▼
-                              policy_gate ──(needs approval)──► interrupt() ◄── /autofix apply
-                                                         ▼
-                                learn_rules ─► verify_rule   (non-blocking; see §7)
-                                                         ▼
-                                publish (one PR review + suggestions + optional autofix PR/commit)
+```mermaid
+flowchart TD
+    GH[GitHub] -- webhook --> API["FastAPI /webhooks<br/>verify HMAC · dedupe · enqueue"]
+    API --> Q[(Redis / arq)]
+    Q --> W["Worker: LangGraph graph<br/>PostgresSaver · LangSmith tracing"]
+    W --> ING[ingest_pr] --> TRI[triage] --> PREP[prepare_sandbox]
+    PREP -- "Send (fan-out)" --> SA[static_analysis]
+    PREP -- Send --> TR["test_runner<br/>CI checks + targeted"]
+    PREP -- Send --> BR["bug_reviewer (LLM)"]
+    PREP -- Send --> SR[security_reviewer]
+    PREP -- Send --> CR[conventions_reviewer]
+    SA & TR & BR & SR & CR --> AGG["aggregate<br/>dedupe · rank · threshold · cap"]
+    AGG -- "Send per fixable finding" --> FIX[fix_proposer]
+    FIX --> CRIT[fix_critic]
+    CRIT -- "revise (≤ 2 loops)" --> FIX
+    CRIT -- accept --> VER["verify_fix<br/>apply in sandbox, re-run tools + tests"]
+    VER --> GATE[policy_gate]
+    GATE -- needs approval --> INT{{"interrupt()"}}
+    CMD["/autofix apply"] --> INT
+    INT --> LEARN["learn_rules → verify_rule<br/>(non-blocking, see §7)"]
+    GATE --> LEARN
+    LEARN --> PUB["publish<br/>one PR review + suggestions + optional autofix PR/commit"]
 ```
 
 **Core state** (`src/pr_agent/graph/state.py`): `PRContext` (repo, number, base/head sha, diff files, config), `findings: Annotated[list[Finding], operator.add]`, `test_results`, `fix_proposals`, `verified_fixes`, `decisions`, `errors`, `budget`.
