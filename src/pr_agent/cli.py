@@ -137,5 +137,21 @@ def demo(case: str = typer.Option("01", help="Seeded case number to review")) ->
     _run(load_local(repo, "main", meta["branch"]), interactive=False)
 
 
+@app.command("eval")
+def eval_cmd(
+    offline: bool = typer.Option(False, help="Scripted LLM, no API keys, no LangSmith upload"),
+    case: list[str] = typer.Option(None, help="Only these case prefixes, e.g. --case 01"),
+) -> None:
+    """Run the seeded eval cases (LangSmith evaluate() unless --offline)."""
+    repo_root = Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(repo_root))  # evals/ lives next to src/, not inside the package
+    from evals.run import main as run_evals
+
+    if not offline and not os.environ.get("LANGSMITH_API_KEY"):
+        typer.echo("LANGSMITH_API_KEY is not set; use --offline or add it to .env.")
+        raise typer.Exit(2)
+    typer.echo(f"Results: {run_evals(offline=offline, cases=case or None)}")
+
+
 if __name__ == "__main__":
     app()
