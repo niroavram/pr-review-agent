@@ -59,5 +59,27 @@ def aggregate(state: ReviewState, config: RunnableConfig) -> dict:
             kept.append(f)
     kept.sort(key=lambda f: (_SEVERITY.get(f.severity, 9), f.file, f.line))
     kept = kept[: settings.max_comments]
-    final = [f.model_copy(update={"id": f"F{i}"}) for i, f in enumerate(kept, start=1)]
-    return {"final_findings": final}
+    final, ids = assign_ids(kept, state.get("finding_ids") or {})
+    return {"final_findings": final, "finding_ids": ids}
+
+
+def stable_key(f: Finding, ordinal: int) -> str:
+    """Identity that survives line shifts between rounds: file + rule (or source/category)."""
+    return f"{f.file}|{f.rule_id or f.source + ':' + f.category}|{ordinal}"
+
+
+def assign_ids(findings: list[Finding], known: dict[str, str]) -> tuple[list[Finding], dict]:
+    """Reuse F<n> for a finding seen in an earlier round; new findings get the next number."""
+    ids = dict(known)
+    next_no = 1 + max((int(v.lstrip("F")) for v in ids.values()), default=0)
+    seen: dict[str, int] = {}
+    out = []
+    for f in findings:
+        base = stable_key(f, 0).rsplit("|", 1)[0]
+        seen[base] = seen.get(base, 0) + 1
+        key = stable_key(f, seen[base])
+        if key not in ids:
+            ids[key] = f"F{next_no}"
+            next_no += 1
+        out.append(f.model_copy(update={"id": ids[key]}))
+    return out, ids

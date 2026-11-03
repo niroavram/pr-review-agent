@@ -1,8 +1,9 @@
 """The review graph.
 
-ingest -> triage -> [Send] static analysis + LLM reviewers -> aggregate
+ingest -> triage -> [Send] static analysis + tests + LLM reviewers -> aggregate
        -> [Send per fixable finding] fix_pipeline (propose -> critic (<=2 revisions) -> verify)
-       -> policy_gate (deterministic; interrupt() for `suggest`) -> publish
+       -> policy_gate (deterministic; interrupt() for `suggest`) -> apply_fixes
+       -> converge: next_round (back to triage on the autofix tip) | escalate -> publish
 """
 
 from __future__ import annotations
@@ -24,10 +25,14 @@ from pr_agent.models import FixProposal, Level, Verification
 from pr_agent.nodes import fix
 from pr_agent.nodes.aggregate import aggregate
 from pr_agent.nodes.analyze import static_analysis
+from pr_agent.nodes.apply import apply_fixes
+from pr_agent.nodes.converge import next_round, route_converge
+from pr_agent.nodes.escalate import escalate
 from pr_agent.nodes.gate import policy_gate
 from pr_agent.nodes.ingest import ingest
 from pr_agent.nodes.publish import publish
 from pr_agent.nodes.review import make_reviewer_node
+from pr_agent.nodes.tests import test_runner
 from pr_agent.nodes.triage import triage
 from pr_agent.nodes.verify import verify_fix
 from pr_agent.policy.config import AutonomyConfig
@@ -35,7 +40,7 @@ from pr_agent.policy.engine import pre_ceiling
 from pr_agent.state import ReviewState
 
 REVIEWERS: tuple[ReviewerKind, ...] = ("security", "bug", "conventions")
-ANALYSIS_NODES = ["static_analysis"]
+ANALYSIS_NODES = ["static_analysis", "test_runner"]
 
 
 class FixOutput(TypedDict):
@@ -96,16 +101,23 @@ def fan_out_fixes(state: ReviewState, config: RunnableConfig) -> list[Send] | st
     ]
 
 
-def build_graph(checkpointer: BaseCheckpointSaver | None = None):  # type: ignore[no-untyped-def]
+def build_graph(  # type: ignore[no-untyped-def]
+    checkpointer: BaseCheckpointSaver | None = None, converge: bool = False
+):
     g = StateGraph(ReviewState)
     g.add_node("ingest", ingest)
     g.add_node("triage", triage)
     g.add_node("static_analysis", static_analysis)
+    g.add_node("test_runner", test_runner)
     for kind in REVIEWERS:
         g.add_node(f"{kind}_review", make_reviewer_node(kind))  # type: ignore[arg-type]
     g.add_node("aggregate", aggregate)
     g.add_node("fix_pipeline", build_fix_pipeline())
     g.add_node("policy_gate", policy_gate)
+    g.add_node("apply_fixes", apply_fixes)
+    if converge:
+        g.add_node("next_round", next_round)
+        g.add_node("escalate", escalate)
     g.add_node("publish", publish)
 
     g.add_edge(START, "ingest")
@@ -116,7 +128,16 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):  # type: ignor
         g.add_edge(node, "aggregate")
     g.add_conditional_edges("aggregate", fan_out_fixes, ["fix_pipeline", "policy_gate"])
     g.add_edge("fix_pipeline", "policy_gate")
-    g.add_edge("policy_gate", "publish")
+    g.add_edge("policy_gate", "apply_fixes")
+    # Outer convergence loop: re-analyze the autofix tip until done, stuck, or out of rounds.
+    if converge:  # PR_AGENT_CONVERGE=1 (experimental, off by default)
+        g.add_conditional_edges(
+            "apply_fixes", route_converge, {"next_round": "next_round", "finish": "escalate"}
+        )
+        g.add_edge("next_round", "triage")
+        g.add_edge("escalate", "publish")
+    else:
+        g.add_edge("apply_fixes", "publish")
     g.add_edge("publish", END)
     return g.compile(checkpointer=checkpointer)
 

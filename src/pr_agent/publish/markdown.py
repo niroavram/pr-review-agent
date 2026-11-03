@@ -117,6 +117,42 @@ def _rule_proposals(state: ReviewState) -> str:
     return "### Prevent this next time\n\n" + "\n".join(lines)
 
 
+def _rounds(state: ReviewState) -> str:
+    history = state.get("history", [])
+    if len(history) < 2:
+        return ""
+    lines = [
+        f"- Round {r['round']}: {len(r['findings'])} finding(s), "
+        f"applied {', '.join(r['applied']) or 'nothing'}"
+        for r in history
+    ]
+    return "### Rounds\n\n" + "\n".join(lines)
+
+
+def _needs_input(state: ReviewState) -> str:
+    """Everything the agent could not resolve safely, with who should act and why."""
+    items = state.get("escalations", [])
+    if not items:
+        return ""
+    replies = state.get("escalation_replies", {})
+    out = ["### Needs your input"]
+    for e in items:
+        who = " ".join(e.to)
+        label = "Question for" if e.kind == "question" else "Review requested from"
+        block = [f"- **{e.finding_id}** · {label} {who}", f"  - Why: {e.reason}"]
+        if e.question:
+            block.append(f"  - Question: {e.question}")
+        block.append(f"  - Tried: {e.tried}")
+        if e.evidence:
+            block.append(
+                "  - Evidence:\n\n    ```\n    " + e.evidence.replace("\n", "\n    ") + "\n    ```"
+            )
+        if e.finding_id in replies:
+            block.append(f"  - Answer: {replies[e.finding_id]}")
+        out.append("\n".join(block))
+    return "\n\n".join(out)
+
+
 def render_review(
     state: ReviewState,
     *,
@@ -128,7 +164,7 @@ def render_review(
     findings = state.get("final_findings", [])
     head = [_title(state), _banners(state)]
     if not findings:
-        sections = [*head, _tool_status(state), "No issues found."]
+        sections = [*head, _tool_status(state), "No issues found.", _rounds(state)]
     else:
         sections = [
             *head,
@@ -136,6 +172,8 @@ def render_review(
             _tool_status(state),
             _findings_table(findings),
             _fixes(state, findings, applied or [], dropped or {}, run_id),
+            _needs_input(state),
+            _rounds(state),
             _rule_proposals(state),
         ]
     return redact_text("\n\n".join(s for s in sections if s) + "\n")

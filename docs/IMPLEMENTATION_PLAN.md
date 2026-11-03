@@ -1,6 +1,6 @@
 # PR Review & Autofix Agent: Implementation Plan (MVP)
 
-> Companion document: [DESIGN.md](DESIGN.md) describes the production architecture this MVP is cut from, and its §9 "Production path" is the roadmap.
+> Companion documents: [AGENTS.md](AGENTS.md) (every agent's role, inputs, outputs, limits and eval metric) and [DESIGN.md](DESIGN.md) describes the production architecture this MVP is cut from, and its §9 "Production path" is the roadmap.
 
 ## Planning approach
 
@@ -50,8 +50,8 @@ uv run pr-agent demo        # builds demo repo, reviews seeded PR #1, prints rev
 | autofix branch | Created via a temporary `git worktree`. It never checks out, never touches the working tree and never pushes. Auto fixes plus approved fixes are applied sequentially and re-verified once combined; a conflicting fix is dropped with a reason |
 | Sandbox image | `python:3.12-slim` plus pinned ruff, bandit, semgrep, pytest and gitleaks, built on first run. The demo tests import pure logic modules, so the sandbox doesn't need FastAPI |
 | gitleaks without Docker | If the binary is missing, the analyzer reports `skipped` in the review. Case 2 is still covered by bandit B105 and the security reviewer |
-| Demo repo | `demo/base/` snapshot plus `demo/cases/NN_slug/{pr.patch, pr.json, expected.json}`. `demo/build.py` creates a throwaway git repo at `.pr-agent/demo-repo/` with `main` and one branch per case, so there are no nested git repos. The demo base ruff config enables only `E,F,I,B,UP`, so rule learning has real not-yet-enabled rules (e.g. `S608`) to find |
-| Case 02 secret | **No secret-looking literal is ever committed.** `cases/02_*/pr.patch.tmpl` holds placeholders. `build.py` derives the values at build time (e.g. `hashlib.sha256(b"pr-agent-demo-02").hexdigest()[:32]`, joined from split strings) and renders `DB_PASSWORD = "<hex>"` / `api_key = "<hex>"`: a generic pattern caught by bandit B105 and gitleaks `generic-api-key`, with no provider formats (no `AKIA…`/`ghp_…`/`sk-…`). The redaction unit tests generate their fixtures the same way |
+| Demo repo | `demo/base/` snapshot plus `demo/cases/NN_slug/{pr.json, expected.json, offline.json, files/}`. `files/` overlays the changed files: full file contents are more reliable than hand-written diffs. `offline.json` holds scripted LLM outputs, so the whole pipeline runs without an API key (`pr-agent eval --offline`). `demo/build.py` creates a throwaway git repo at `.pr-agent/demo-repo/` with `main` and one branch per case, so there are no nested git repos. The demo base ruff config enables only `E,F,I,B,UP`, so rule learning has real not-yet-enabled rules (e.g. `S608`) to find |
+| Case 02 secret | **No secret-looking literal is ever committed.** `cases/02_*/files/src/store/notify.py.tmpl` holds placeholders. `build.py` derives the values at build time (e.g. `hashlib.sha256(b"pr-agent-demo-02").hexdigest()[:32]`, joined from split strings) and renders `DB_PASSWORD = "<hex>"` / `api_key = "<hex>"`: a generic pattern caught by bandit B105 and gitleaks `generic-api-key`, with no provider formats (no `AKIA…`/`ghp_…`/`sk-…`). The redaction unit tests generate their fixtures the same way |
 | Outputs / ignores | All run output goes under `./.pr-agent/` (runs, checkpoints, demo repo). `.gitignore` lists `.pr-agent/` (a directory-only pattern, so `.pr-agent.yml` is unaffected), `.env`, `.venv/`, `__pycache__/` and `.pytest_cache/` |
 
 ## 4. Autonomy boundaries (critical requirement)
@@ -222,6 +222,14 @@ flowchart LR
 | 3B GitHub URL mode | `ingest/github.py` (REST metadata, partial clone, `refs/pull/N/head`), `--post` stretch | `ingest/github.py`, `publish/github_post.py` | W2 |
 | 3D Convergence loop (integration lead) | `apply_fixes`, `converge` (stop conditions, `Overwrite` resets, stable ids), `escalate` (interrupt + "Needs your input"), `rounds`/`escalations` metadata, eval case 13 | `graph.py`, `nodes/apply.py`, `nodes/converge.py`, `nodes/escalate.py`, `nodes/publish.py`, `runner.py`, `demo/cases/13_*` | W2 |
 | 3C Rule learning | ladder a→b→c, `verify_rule`, cap 3, "Prevent this next time" section, `--rules-branch`, `rule_proposals` metadata; evaluators `rule_valid_case01` (a valid rule that hits case 01 head) + `no_rules_clean` (case 07 → 0); unit tests for verify_rule using fixture rules | `learning/*`, `agents/rule_drafter.py`, `agents/prompts/rule_*.md`, `nodes/learn.py`, `evals/evaluators.py` (2 functions), a review.md section hook | W2. **Must not block the core**: it lands behind `--learn` (default on once green), and the integration lead does the graph wiring |
+
+### Build subagents
+
+Each stream is run by a subagent defined in `.claude/agents/`: `ingest-publish`, `agents`, `analysis-sandbox`, `policy`, `evals-demo`, `rule-learning`, plus a read-only `code-reviewer`. Each definition lists the directories the subagent owns, the files it must not touch (`models.py`, `state.py`, `graph.py`, `runner.py`, `cli.py` belong to the integration lead), its test requirements, and "stop and report when done". Streams work in isolated git worktrees, and the integration lead merges them. See [AGENTS.md § Build roles](AGENTS.md#build-roles-claudeagents).
+
+### Branching
+
+`main` always passes ruff and pytest. Work happens on `dev`, and is merged to `main` only when green. Every merge updates the README "Status" section. The `v1-submission` tag is never moved, and history is never rewritten.
 
 ## 8. Verification
 

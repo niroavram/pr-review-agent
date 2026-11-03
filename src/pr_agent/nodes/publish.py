@@ -9,9 +9,9 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from pr_agent.deps import get_deps
-from pr_agent.models import FixProposal, Level
-from pr_agent.publish.git_branch import create_branch_with_patches
+from pr_agent.nodes.apply import apply_fixes, autofix_branch
 from pr_agent.publish.markdown import render_review
+from pr_agent.rounds import merge_rounds
 from pr_agent.state import ReviewState
 from pr_agent.tracing import redact, redact_text
 
@@ -21,23 +21,6 @@ def _run_id(state: ReviewState) -> str:
         return Path(state["output_dir"]).name
     ctx = state["ctx"]
     return f"{ctx.pr_id}-{ctx.head_sha[:8]}"
-
-
-def _to_ship(state: ReviewState) -> list[FixProposal]:
-    """AUTO fixes, or approved SUGGEST fixes, whose verification passed."""
-    levels = {d.finding_id: d.level for d in state.get("decisions", [])}
-    passed = {v.finding_id for v in state.get("verifications", []) if v.passed}
-    approved = set(state.get("approved", []))
-
-    def ships(fid: str) -> bool:
-        level = levels.get(fid)
-        return level is Level.AUTO or (level is Level.SUGGEST and fid in approved)
-
-    return [
-        f
-        for f in state.get("fixes", [])
-        if f.patch and ships(f.finding_id) and f.finding_id in passed
-    ]
 
 
 def _summary_json(
@@ -63,34 +46,38 @@ def _summary_json(
             "rule_proposals": dump(state.get("rule_proposals", [])),
             "config_error": state.get("config_error"),
             "autofix_branch": branch,
+            "rounds": len(state.get("history", [])),
+            "resolved_in_round": state.get("resolved_in_round", {}),
+            "escalations": dump(state.get("escalations", [])),
+            "escalation_replies": state.get("escalation_replies", {}),
         }
     )
 
 
 def publish(state: ReviewState, config: RunnableConfig) -> dict[str, Any]:
-    """Ship eligible fixes to autofix/<pr_id> and write the review artifacts."""
-    ctx = state["ctx"]
+    """Write review.md, patches/ and review.json for all rounds merged (latest record wins)."""
     run_id = _run_id(state)
     out = get_deps(config).settings.work_dir / "runs" / run_id
-    ship = _to_ship(state)
-    branch = f"autofix/{ctx.pr_id}"
-    applied: list[str] = []
-    dropped: dict[str, str] = {}
-    if ship:
-        applied, dropped = create_branch_with_patches(
-            ctx.repo_path,
-            ctx.head_sha,
-            branch,
-            [(f.finding_id, f.patch) for f in ship],
-            f"pr-agent autofix for {ctx.pr_id}: {', '.join(f.finding_id for f in ship)}",
-        )
+    history = state.get("history") or apply_fixes(state, config)["history"]  # single-round path
+    view = merge_rounds(history)
+    merged: ReviewState = {
+        **state,
+        "history": history,
+        "final_findings": view.findings,
+        "decisions": view.decisions,
+        "fixes": view.fixes,
+        "verifications": view.verifications,
+        "approved": view.approved,
+    }
+    merged["resolved_in_round"] = view.resolved_in_round  # type: ignore[typeddict-unknown-key]
+    branch = autofix_branch(state) if view.applied else None
 
     (out / "patches").mkdir(parents=True, exist_ok=True)
-    md = render_review(state, applied=applied, dropped=dropped, run_id=run_id)
+    md = render_review(merged, applied=view.applied, dropped=view.dropped, run_id=run_id)
     (out / "review.md").write_text(md)
-    for fix in state.get("fixes", []):
+    for fix in view.fixes:
         if fix.patch:
             (out / "patches" / f"{fix.finding_id}.patch").write_text(redact_text(fix.patch))
-    summary = _summary_json(state, applied, dropped, branch if applied else None)
+    summary = _summary_json(merged, view.applied, view.dropped, branch)
     (out / "review.json").write_text(json.dumps(summary, indent=2))
     return {"output_dir": str(out)}

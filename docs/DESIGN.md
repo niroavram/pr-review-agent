@@ -1,6 +1,6 @@
 # PR Review & Autofix Agent: Design
 
-> Production architecture. The runnable MVP cut from it is described in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md); §9 "Production path" is the roadmap from one to the other.
+> Production architecture. The runnable MVP cut from it is described in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md); §9 "Production path" is the roadmap from one to the other. Every agent's role card (mission, inputs, output schema, permissions, escalation, eval metric) is in [AGENTS.md](AGENTS.md).
 
 ## 1. Problem statement
 

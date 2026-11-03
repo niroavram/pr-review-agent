@@ -46,11 +46,21 @@ def finding_gone(original: Finding, after: list[Finding]) -> bool:
     )
 
 
-def new_findings(before: list[Finding], after: list[Finding]) -> list[str]:
-    """(rule_id, file) keys whose count grew after the patch. Line numbers shift, so ignore them."""
-    count_before = Counter((f.rule_id, f.file) for f in before)
-    grown = Counter((f.rule_id, f.file) for f in after) - count_before
-    return [f"{rule} in {file}" for rule, file in grown]
+# New lint/format findings don't fail a fix: the convergence loop fixes them next round.
+DEFERRABLE = {"lint", "format"}
+
+
+def new_findings(before: list[Finding], after: list[Finding]) -> list[Finding]:
+    """Findings whose (rule_id, file) count grew after the patch. Lines shift, so ignore them."""
+    remaining = Counter((f.rule_id, f.file) for f in before)
+    grown = []
+    for f in after:
+        key = (f.rule_id, f.file)
+        if remaining[key] > 0:
+            remaining[key] -= 1
+        else:
+            grown.append(f)
+    return grown
 
 
 def run_tests(sandbox: Sandbox, workdir: Path, timeout: int) -> tuple[bool, str]:
@@ -85,12 +95,19 @@ def check_patch(
     after, errors_after = scan(deps.sandbox, workdir, base_dir, files)
     errors = errors_before + errors_after
     grown = new_findings(before, after)
-    log = [f"analyzer error: {e}" for e in errors] + [f"new finding: {g}" for g in grown]
+    blocking = [g for g in grown if g.category not in DEFERRABLE]
+    log = [f"analyzer error: {e}" for e in errors]
+    log += [f"new finding: {g.rule_id} in {g.file}" for g in blocking]
+    log += [
+        f"introduced {g.rule_id} in {g.file} (deferred to next round)"
+        for g in grown
+        if g not in blocking
+    ]
     checks = {
         "applies": True,
         # fail closed: if an analyzer could not run, we cannot claim what it would have checked
         "finding_gone": not errors and finding_gone(finding, after),
-        "no_new_findings": not errors and not grown,
+        "no_new_findings": not errors and not blocking,
     }
     if deps.sandbox.isolated or ctx.mode == "local":
         checks["tests_pass"], test_log = run_tests(

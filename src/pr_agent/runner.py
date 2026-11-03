@@ -16,6 +16,8 @@ from pr_agent.tracing import make_tracer, run_config
 
 # Called with the pending `suggest` fixes; returns the finding ids to approve.
 Approver = Callable[[list[dict[str, Any]]], list[str]]
+# Called with the escalations; returns {finding_id: answer} (non-interactive: {}).
+Responder = Callable[[list[dict[str, Any]]], dict[str, str]]
 
 
 @dataclass
@@ -29,12 +31,22 @@ def _approve_none(pending: list[dict[str, Any]]) -> list[str]:
     return []
 
 
-def _drive(graph: Any, first_input: Any, cfg: dict, approver: Approver) -> dict[str, Any]:
-    """Invoke; whenever the graph pauses at policy_gate, ask the approver and resume."""
+def _answer_none(items: list[dict[str, Any]]) -> dict[str, str]:
+    return {}
+
+
+def _drive(
+    graph: Any, first_input: Any, cfg: dict, approver: Approver, responder: Responder
+) -> dict[str, Any]:
+    """Invoke; on each pause (approval gate or escalation) ask a human callback and resume."""
     result = graph.invoke(first_input, cfg)
     while result.get("__interrupt__"):
-        pending = result["__interrupt__"][0].value.get("suggest", [])
-        result = graph.invoke(Command(resume=approver(pending)), cfg)
+        value = result["__interrupt__"][0].value
+        if "escalations" in value:
+            answer: Any = responder(value["escalations"])
+        else:
+            answer = approver(value.get("suggest", []))
+        result = graph.invoke(Command(resume=answer), cfg)
     return result
 
 
@@ -46,16 +58,26 @@ def _trace_url(tracer: Any) -> str | None:
 
 
 def run_review(
-    ctx: PRContext, deps: Deps, approver: Approver = _approve_none, banners: list[str] | None = None
+    ctx: PRContext,
+    deps: Deps,
+    approver: Approver = _approve_none,
+    banners: list[str] | None = None,
+    responder: Responder = _answer_none,
 ) -> RunResult:
     run_id = f"{ctx.pr_id}-{ctx.head_sha[:8]}-{time.strftime('%Y%m%d%H%M%S')}"
     output_dir = deps.settings.work_dir / "runs" / run_id
     tracer = make_tracer()
     cfg = run_config(ctx, run_id, deps, tracer)
     checkpointer = sqlite_checkpointer(deps.settings.work_dir / "checkpoints.sqlite")
-    graph = build_graph(checkpointer)
-    initial = {"ctx": ctx, "output_dir": str(output_dir), "banners": banners or []}
-    state = _drive(graph, initial, cfg, approver)
+    graph = build_graph(checkpointer, converge=deps.settings.converge)
+    initial = {
+        "ctx": ctx,
+        "output_dir": str(output_dir),
+        "banners": banners or [],
+        "round": 1,
+        "max_rounds": deps.settings.max_rounds,
+    }
+    state = _drive(graph, initial, cfg, approver, responder)
     return RunResult(run_id, state, _trace_url(tracer))
 
 
@@ -66,7 +88,7 @@ def resume_review(run_id: str, deps: Deps, approve: list[str]) -> RunResult:
     reused and nothing upstream (LLM calls, analyzers) runs again.
     """
     checkpointer = sqlite_checkpointer(deps.settings.work_dir / "checkpoints.sqlite")
-    graph = build_graph(checkpointer)
+    graph = build_graph(checkpointer, converge=deps.settings.converge)
     thread = {"configurable": {"thread_id": run_id, "deps": deps}}
     before_gate = next(
         (s for s in graph.get_state_history(thread) if s.next == ("policy_gate",)), None
@@ -77,8 +99,9 @@ def resume_review(run_id: str, deps: Deps, approve: list[str]) -> RunResult:
     tracer = make_tracer()
     cfg = run_config(ctx, run_id, deps, tracer)
     cfg["configurable"]["checkpoint_id"] = before_gate.config["configurable"]["checkpoint_id"]
-    result = graph.invoke(None, cfg)
+    first = graph.invoke(None, cfg)
     cfg["configurable"].pop("checkpoint_id")
-    if result.get("__interrupt__"):
-        result = graph.invoke(Command(resume=approve), cfg)
+    result = first
+    if first.get("__interrupt__"):
+        result = _drive(graph, Command(resume=approve), cfg, _approve_none, _answer_none)
     return RunResult(run_id, result, _trace_url(tracer))

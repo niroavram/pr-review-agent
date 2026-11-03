@@ -23,6 +23,9 @@ class Settings:
     max_comments: int = field(default_factory=lambda: int(_env("PR_AGENT_MAX_COMMENTS", "15")))
     max_fixes: int = field(default_factory=lambda: int(_env("PR_AGENT_MAX_FIXES", "8")))
     max_revisions: int = 2
+    # Convergence loop + escalation: designed, not yet verified -> disabled by default.
+    converge: bool = field(default_factory=lambda: _env("PR_AGENT_CONVERGE", "0") == "1")
+    max_rounds: int = field(default_factory=lambda: int(_env("PR_AGENT_MAX_ROUNDS", "3")))
     max_rule_proposals: int = 3
     # auto | docker | local
     sandbox: str = field(default_factory=lambda: _env("PR_AGENT_SANDBOX", "auto"))

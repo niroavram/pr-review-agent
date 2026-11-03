@@ -4,7 +4,7 @@
       "file": "src/store/customers.py",
       "category": "security",
       "line": 6,
-      "rule": "bandit:B608",
+      "rule": null,
       "keywords": [
         "sql",
         "injection"

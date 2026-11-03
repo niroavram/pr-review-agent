@@ -114,3 +114,15 @@ def fix_type_for(f: Finding) -> FixType:
     if f.category == "security" or f.source in {"bandit", "gitleaks", "llm:security"}:
         return "security"
     return "bug"
+
+
+class Escalation(BaseModel):
+    """A finding the agent could not resolve safely, handed to a person."""
+
+    finding_id: str
+    kind: Literal["review_request", "question"]
+    to: list[str] = Field(default_factory=list)  # owners, or ["PR author"]
+    reason: str  # why the agent stopped, e.g. the policy rule that decided it
+    tried: str = ""  # what was attempted (rounds, fixes, critic verdicts)
+    evidence: str = ""  # failed checks / log tail
+    question: str | None = None  # concrete question for kind == "question"

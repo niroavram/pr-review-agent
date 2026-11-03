@@ -6,6 +6,7 @@ import operator
 from typing import Annotated, Any, TypedDict
 
 from pr_agent.models import (
+    Escalation,
     Finding,
     FixProposal,
     PolicyDecision,
@@ -35,6 +36,14 @@ class ReviewState(TypedDict, total=False):
     rule_proposals: list[RuleProposal]
     banners: Annotated[list[str], operator.add]  # warnings shown at the top of the review
     output_dir: str
+    # convergence loop
+    round: int  # 1-based analysis round
+    max_rounds: int
+    history: Annotated[list[dict[str, Any]], operator.add]  # one RoundRecord per round
+    finding_ids: dict[str, str]  # stable key -> F<n>, so ids survive across rounds
+    autofix_sha: str | None  # tip of autofix/<pr> after the latest round
+    escalations: list[Escalation]
+    escalation_replies: dict[str, str]  # finding id -> human answer (interactive runs)
 
 
 class FixTask(TypedDict):
