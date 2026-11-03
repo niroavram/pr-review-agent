@@ -43,7 +43,9 @@ def _drive(
     while result.get("__interrupt__"):
         value = result["__interrupt__"][0].value
         if "escalations" in value:
-            answer: Any = responder(value["escalations"])
+            # A dict resume value means {interrupt_id: value} to LangGraph, and an empty one
+            # resumes nothing (the interrupt fires again forever), so send a list of pairs.
+            answer: Any = list(responder(value["escalations"]).items())
         else:
             answer = approver(value.get("suggest", []))
         result = graph.invoke(Command(resume=answer), cfg)

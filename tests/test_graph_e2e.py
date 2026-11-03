@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from pr_agent.agents.critic import CriticOutput
 from pr_agent.agents.fixer import Edit, FixOutput
 from pr_agent.agents.reviewers import LLMFinding, ReviewOutput
@@ -18,8 +16,6 @@ from pr_agent.sandbox import LocalSandbox
 from pr_agent.settings import Settings
 from tests.fakes import FakeLLM
 
-pytestmark = pytest.mark.skip(reason="hangs, under investigation")
-
 BAD = "    query = f\"SELECT id, total_cents FROM orders WHERE customer = '{customer}'\"\n"
 BAD += "    return conn.execute(query).fetchall()"
 GOOD = '    query = "SELECT id, total_cents FROM orders WHERE customer = ?"\n'
@@ -29,17 +25,22 @@ GOOD += "    return conn.execute(query, (customer,)).fetchall()"
 def _llm() -> FakeLLM:
     return FakeLLM(
         {
-            "ReviewOutput": ReviewOutput(
-                findings=[
-                    LLMFinding(
-                        file="src/store/orders.py",
-                        line=20,
-                        severity="high",
-                        category="security",
-                        message="SQL injection: customer is interpolated into the query",
-                        confidence=0.9,
-                    )
-                ]
+            # Like a real reviewer: reports the injection only while the f-string is in the code.
+            "ReviewOutput": lambda system, user: (
+                ReviewOutput(
+                    findings=[
+                        LLMFinding(
+                            file="src/store/orders.py",
+                            line=20,
+                            severity="high",
+                            category="security",
+                            message="SQL injection: customer is interpolated into the query",
+                            confidence=0.9,
+                        )
+                    ]
+                )
+                if "WHERE customer = '{customer}'" in user
+                else ReviewOutput()
             ),
             "FixOutput": FixOutput(
                 edits=[Edit(file="src/store/orders.py", old=BAD, new=GOOD)],
@@ -85,4 +86,8 @@ def test_case01_resume_applies_later_approval(demo_repo: Path, tmp_path: Path) -
     second = resume_review(first.run_id, deps, ["F1"])
     summary = json.loads((Path(second.state["output_dir"]) / "review.json").read_text())
     assert summary["applied"] == ["F1"]
-    assert len(deps.llm.calls) == calls_before  # type: ignore[attr-defined]  # no LLM re-run
+    # Nothing upstream re-ran on the old code: no new fixer/critic calls, and any new review
+    # calls (convergence round 2) only ever saw the fixed code.
+    new_calls = deps.llm.calls[calls_before:]  # type: ignore[attr-defined]
+    assert all(c["schema"] == "ReviewOutput" for c in new_calls)
+    assert not any("WHERE customer = '{customer}'" in c["user"] for c in new_calls)
