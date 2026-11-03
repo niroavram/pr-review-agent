@@ -8,10 +8,9 @@ from pathlib import Path
 from pr_agent.agents.critic import CriticOutput
 from pr_agent.agents.fixer import Edit, FixOutput
 from pr_agent.agents.reviewers import LLMFinding, ReviewOutput
-from pr_agent.ingest.local import load_local
-
 from pr_agent.deps import Deps
 from pr_agent.gitutil import git, show_file
+from pr_agent.ingest.local import load_local
 from pr_agent.runner import resume_review, run_review
 from pr_agent.sandbox import LocalSandbox
 from pr_agent.settings import Settings

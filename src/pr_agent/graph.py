@@ -18,6 +18,7 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
+from pr_agent.agents.reviewers import ReviewerKind
 from pr_agent.deps import get_deps
 from pr_agent.models import FixProposal, Level, Verification
 from pr_agent.nodes import fix
@@ -33,7 +34,7 @@ from pr_agent.policy.config import AutonomyConfig
 from pr_agent.policy.engine import pre_ceiling
 from pr_agent.state import ReviewState
 
-REVIEWERS = ("security", "bug", "conventions")
+REVIEWERS: tuple[ReviewerKind, ...] = ("security", "bug", "conventions")
 ANALYSIS_NODES = ["static_analysis"]
 
 
@@ -72,12 +73,12 @@ def fan_out_analysis(state: ReviewState) -> list[Send]:
 def fan_out_fixes(state: ReviewState, config: RunnableConfig) -> list[Send] | str:
     """One fix pipeline per fixable finding whose location could ever receive a patch."""
     cfg = AutonomyConfig.model_validate(state["config"]) if state.get("config") else None
-    max_fixes = get_deps(config).settings.max_fixes
+    settings = get_deps(config).settings
     candidates = [
         f
         for f in state.get("final_findings", [])
         if f.fixable and pre_ceiling(f, cfg) <= Level.SUGGEST
-    ][:max_fixes]
+    ][: settings.max_fixes]
     if not candidates:
         return "policy_gate"
     return [
@@ -101,7 +102,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):  # type: ignor
     g.add_node("triage", triage)
     g.add_node("static_analysis", static_analysis)
     for kind in REVIEWERS:
-        g.add_node(f"{kind}_review", make_reviewer_node(kind))
+        g.add_node(f"{kind}_review", make_reviewer_node(kind))  # type: ignore[arg-type]
     g.add_node("aggregate", aggregate)
     g.add_node("fix_pipeline", build_fix_pipeline())
     g.add_node("policy_gate", policy_gate)

@@ -17,6 +17,8 @@ from pr_agent.settings import Settings
 class FixState(TypedDict, total=False):
     """State of the fix subgraph for one finding."""
 
+    max_revisions: int  # set by the graph from Settings
+
     finding: Finding
     ctx: PRContext
     config: dict[str, Any] | None
@@ -88,10 +90,11 @@ def critic(state: FixState, config: RunnableConfig) -> dict[str, Any]:
 
 def route_after_critic(state: FixState) -> Literal["propose", "verify", "done"]:
     """accept -> verify; revise within the revision budget -> propose; else done."""
+    budget = state.get("max_revisions", Settings().max_revisions)
     verdict = state.get("verdict")
     if verdict == "accept":
         return "verify"
-    if verdict == "revise" and state.get("attempts", 0) <= Settings().max_revisions:
+    if verdict == "revise" and state.get("attempts", 0) <= budget:
         return "propose"
     return "done"
 

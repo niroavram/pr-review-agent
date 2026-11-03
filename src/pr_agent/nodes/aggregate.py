@@ -37,7 +37,9 @@ def aggregate(state: ReviewState, config: RunnableConfig) -> dict:
     raw = [
         f
         for f in state.get("findings", [])
-        if f.confidence >= settings.min_confidence and _valid_convention(f, known_ids)
+        # The confidence threshold filters LLM opinions; tool findings are evidence.
+        if (_is_tool(f) or f.confidence >= settings.min_confidence)
+        and _valid_convention(f, known_ids)
     ]
     # Tool findings first so they win dedupe (deterministic evidence beats LLM opinion).
     raw.sort(key=lambda f: (not _is_tool(f), _SEVERITY.get(f.severity, 9), -f.confidence))

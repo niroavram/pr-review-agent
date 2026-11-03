@@ -56,7 +56,9 @@ def test_parses_canned_json(tmp_path: Path) -> None:
     [f] = run_bandit(sandbox, tmp_path, ["src/a.py", "README.md"])
     assert f.rule_id == "bandit:B105" and f.file == "src/a.py" and f.line == 7
     assert f.severity == "low" and f.confidence == 0.8
-    assert sandbox.commands == [["bandit", "-q", "-f", "json", "src/a.py"]]  # non-local, .py only
+    assert sandbox.commands == [
+        ["bandit", "-q", "-f", "json", "-s", "B101", "src/a.py"]
+    ]  # non-local, .py only
 
 
 def test_absolute_paths_made_relative(tmp_path: Path) -> None:

@@ -23,7 +23,9 @@ def run_bandit(sandbox: Sandbox, workdir: Path, files: list[str]) -> list[Findin
     files = [f for f in files if f.endswith(".py")]
     if not files:
         return []
-    res = sandbox.run([*bandit_cmd(sandbox), "-q", "-f", "json", *files], workdir)
+    # B101 (assert used) is skipped: asserts are the pytest idiom, flagging them is noise.
+    cmd = [*bandit_cmd(sandbox), "-q", "-f", "json", "-s", "B101", *files]
+    res = sandbox.run(cmd, workdir)
     if res.timed_out or res.returncode not in (0, 1):  # 1 = issues found, not an error
         raise RuntimeError(f"bandit exit {res.returncode}: {res.stderr.strip()[:300]}")
     return parse_bandit(res.stdout, workdir)
